@@ -1,0 +1,1134 @@
+<!DOCTYPE html>
+<html lang="zh-Hant" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>專業 PDF 全螢幕簡報播放器</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- PDF.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    </script>
+    <style>
+        /* 隱藏滾動條但保留功能 */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        /* canvas 容器樣式 */
+        .pdf-canvas-container {
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.3);
+            transition: transform 0.2s ease;
+        }
+        /* 全螢幕簡報模式下的特定樣式 */
+        :-webkit-full-screen .presentation-mode {
+            background-color: #000000;
+        }
+        :-ms-fullscreen .presentation-mode {
+            background-color: #000000;
+        }
+        :fullscreen .presentation-mode {
+            background-color: #000000;
+        }
+        /* 雷射筆與畫筆畫布 */
+        #drawingCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            pointer-events: none;
+            z-index: 10;
+        }
+        #drawingCanvas.active-draw {
+            pointer-events: auto;
+            cursor: crosshair;
+        }
+        #drawingCanvas.active-laser {
+            pointer-events: auto;
+            cursor: none; /* 隱藏預設游標以顯示雷射筆 */
+        }
+        /* 雷射紅點 */
+        .laser-pointer {
+            position: absolute;
+            width: 12px;
+            height: 12px;
+            background-color: rgba(239, 68, 68, 0.9);
+            border-radius: 50%;
+            pointer-events: none;
+            transform: translate(-50%, -50%);
+            z-index: 100;
+            box-shadow: 0 0 8px 4px rgba(239, 68, 68, 0.6), 0 0 20px 8px rgba(239, 68, 68, 0.4);
+            display: none;
+        }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-100 h-full flex flex-col overflow-hidden font-sans select-none">
+
+    <!-- 頂部導覽列 / 讀取檔案狀態 -->
+    <header id="topNavbar" class="bg-slate-950 border-b border-slate-800 px-6 py-3 flex items-center justify-between z-30 transition-all duration-300">
+        <div class="flex items-center space-x-3">
+            <div class="bg-red-600 p-2 rounded-lg">
+                <i data-lucide="presentation" class="w-6 h-6 text-white"></i>
+            </div>
+            <div>
+                <h1 class="text-md font-bold tracking-wide">PDF Presenter</h1>
+                <p id="fileName" class="text-xs text-slate-400 max-w-xs md:max-w-md truncate">尚未載入檔案</p>
+            </div>
+        </div>
+
+        <!-- 頂部控制項 -->
+        <div class="flex items-center space-x-3">
+            <!-- 載入新檔案按鈕 -->
+            <button onclick="triggerFileInput()" class="flex items-center space-x-2 bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg text-sm transition font-medium">
+                <i data-lucide="folder-open" class="w-4 h-4"></i>
+                <span class="hidden sm:inline">開啟 PDF</span>
+            </button>
+            <input type="file" id="fileInput" accept=".pdf" class="hidden" onchange="handleFileSelect(event)">
+
+            <!-- 顯示模式切換 -->
+            <div class="bg-slate-800 p-1 rounded-lg flex space-x-1">
+                <button id="btnViewSingle" onclick="setViewMode('single')" class="px-3 py-1 rounded text-xs font-semibold flex items-center space-x-1 bg-slate-700 text-white" title="單頁簡報模式">
+                    <i data-lucide="file" class="w-3.5 h-3.5"></i>
+                    <span class="hidden md:inline">單頁播放</span>
+                </button>
+                <button id="btnViewContinuous" onclick="setViewMode('continuous')" class="px-3 py-1 rounded text-xs font-semibold flex items-center space-x-1 text-slate-400 hover:text-white" title="連續捲動模式">
+                    <i data-lucide="files" class="w-3.5 h-3.5"></i>
+                    <span class="hidden md:inline">連續閱讀</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- 主要工作區域 -->
+    <div class="flex-1 flex overflow-hidden relative">
+        
+        <!-- 左側縮圖側邊欄 (預設隱藏，載入 PDF 後可開啟) -->
+        <aside id="sidebar" class="w-64 bg-slate-950 border-r border-slate-800 flex flex-col transition-all duration-300 -translate-x-full absolute md:relative md:translate-x-0 h-full z-20">
+            <div class="p-4 border-b border-slate-800 flex justify-between items-center">
+                <span class="text-sm font-bold text-slate-400 flex items-center gap-2">
+                    <i data-lucide="list" class="w-4 h-4"></i> 頁面大綱 / 縮圖
+                </span>
+                <button onclick="toggleSidebar()" class="md:hidden text-slate-400 hover:text-white">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <!-- 縮圖列表 -->
+            <div id="thumbnailContainer" class="flex-1 overflow-y-auto p-4 space-y-4 no-scrollbar">
+                <div class="text-center text-xs text-slate-500 py-10">請先載入 PDF 檔案</div>
+            </div>
+        </aside>
+
+        <!-- PDF 播放展示主視窗 -->
+        <main id="presentationViewport" class="flex-1 bg-slate-900 flex flex-col justify-between overflow-hidden relative presentation-mode">
+            
+            <!-- 浮動提示與指示器 (如簡報中滑鼠靜止自動隱藏) -->
+            <div id="pageIndicatorFloating" class="absolute top-4 left-1/2 transform -translate-x-1/2 bg-slate-950/80 backdrop-blur border border-slate-800/80 text-white px-4 py-1.5 rounded-full text-sm font-semibold z-10 opacity-0 transition-opacity duration-300 pointer-events-none flex items-center gap-2">
+                <span id="floatingCurrentPage">0</span> / <span id="floatingTotalPages">0</span>
+            </div>
+
+            <!-- 無檔案時的拖放區 -->
+            <div id="dropzone" class="absolute inset-0 flex flex-col items-center justify-center p-6 text-center z-10 transition-colors duration-200" ondragover="dragOverHandler(event)" ondragleave="dragLeaveHandler(event)" ondrop="dropHandler(event)">
+                <div class="max-w-md p-10 border-2 border-dashed border-slate-700 hover:border-red-500 rounded-2xl bg-slate-950/50 backdrop-blur transition flex flex-col items-center cursor-pointer" onclick="triggerFileInput()">
+                    <div class="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center text-red-500 mb-6">
+                        <i data-lucide="upload-cloud" class="w-10 h-10"></i>
+                    </div>
+                    <h3 class="text-lg font-bold mb-2">拖曳 PDF 檔案至此處</h3>
+                    <p class="text-sm text-slate-400 mb-6">或者點選此區塊瀏覽本機檔案</p>
+                    <span class="text-xs text-slate-500 bg-slate-800 px-3 py-1.5 rounded-md">支援簡報筆、鍵盤快捷鍵翻頁</span>
+                </div>
+            </div>
+
+            <!-- 渲染畫布容器 -->
+            <div id="viewerScrollContainer" class="flex-1 overflow-auto flex justify-center items-center p-4 relative no-scrollbar" onscroll="handleContainerScroll()">
+                <div id="pdfViewer" class="relative flex flex-col items-center gap-6">
+                    <!-- 動態生成的 Canvas 會被插入到這裡 -->
+                </div>
+                <!-- 覆蓋在 PDF 上層用於雷射筆/畫筆的畫布 -->
+                <canvas id="drawingCanvas"></canvas>
+                <!-- 紅色雷射筆光點 -->
+                <div id="laserPointer" class="laser-pointer"></div>
+            </div>
+
+            <!-- 底部工具列 (簡報進行時，在全螢幕下閒置滑鼠會自動隱藏) -->
+            <footer id="controlBar" class="bg-slate-950/90 backdrop-blur border-t border-slate-800 px-6 py-4 flex flex-col md:flex-row items-center justify-between gap-4 z-20 transition-all duration-300">
+                <!-- 頁數與側邊欄控制 -->
+                <div class="flex items-center space-x-4">
+                    <button onclick="toggleSidebar()" class="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition" title="切換側邊欄">
+                        <i data-lucide="menu" class="w-5 h-5"></i>
+                    </button>
+                    <div class="flex items-center space-x-2 text-sm">
+                        <button onclick="prevPage()" class="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg transition" title="上一頁 (PageUp / ←)">
+                            <i data-lucide="chevron-left" class="w-5 h-5"></i>
+                        </button>
+                        <div class="flex items-center space-x-1">
+                            <input type="number" id="pageNumberInput" value="1" min="1" class="w-12 bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-center text-white focus:outline-none focus:border-red-500" onchange="goToPageFromInput()">
+                            <span class="text-slate-400">/ <span id="totalPagesText">0</span> 頁</span>
+                        </div>
+                        <button onclick="nextPage()" class="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg transition" title="下一頁 (Space / PageDown / →)">
+                            <i data-lucide="chevron-right" class="w-5 h-5"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 簡報互動輔助工具 (雷射筆 / 畫筆) -->
+                <div class="flex items-center bg-slate-900 border border-slate-800 p-1.5 rounded-xl space-x-1">
+                    <button id="toolCursor" onclick="setInteractionTool('cursor')" class="p-2 rounded-lg text-red-500 bg-slate-800 transition flex items-center justify-center" title="一般選取游標">
+                        <i data-lucide="mouse-pointer" class="w-4 h-4"></i>
+                    </button>
+                    <button id="toolLaser" onclick="setInteractionTool('laser')" class="p-2 rounded-lg text-slate-400 hover:text-white transition flex items-center justify-center" title="雷射筆效果 (L)">
+                        <span class="relative flex h-4 w-4 justify-center items-center">
+                            <span class="animate-ping absolute inline-flex h-3 w-3 rounded-full bg-red-400 opacity-75"></span>
+                            <span class="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+                        </span>
+                    </button>
+                    <button id="toolPen" onclick="setInteractionTool('pen')" class="p-2 rounded-lg text-slate-400 hover:text-white transition flex items-center justify-center" title="畫筆標記工具 (P)">
+                        <i data-lucide="pen-tool" class="w-4 h-4"></i>
+                    </button>
+                    <!-- 筆刷顏色選擇 (畫筆啟用時顯示) -->
+                    <div id="penOptions" class="hidden flex items-center pl-2 space-x-1.5 border-l border-slate-800">
+                        <button onclick="setPenColor('#ef4444')" class="w-4 h-4 rounded-full bg-red-500 ring-2 ring-white ring-offset-1 ring-offset-slate-900"></button>
+                        <button onclick="setPenColor('#3b82f6')" class="w-4 h-4 rounded-full bg-blue-500"></button>
+                        <button onclick="setPenColor('#22c55e')" class="w-4 h-4 rounded-full bg-green-500"></button>
+                        <button onclick="setPenColor('#eab308')" class="w-4 h-4 rounded-full bg-yellow-500"></button>
+                        <button onclick="clearDrawings()" class="p-1 text-slate-400 hover:text-red-400 rounded transition" title="清除所有筆跡">
+                            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 縮放與全螢幕控制 -->
+                <div class="flex items-center space-x-3">
+                    <div class="flex items-center space-x-1 bg-slate-900 rounded-lg p-1 text-xs">
+                        <button onclick="zoomOut()" class="p-1 text-slate-400 hover:text-white" title="縮小 (Ctrl + -)">
+                            <i data-lucide="zoom-out" class="w-4 h-4"></i>
+                        </button>
+                        <span id="zoomPercentText" class="w-12 text-center text-slate-300 font-medium">100%</span>
+                        <button onclick="zoomIn()" class="p-1 text-slate-400 hover:text-white" title="放大 (Ctrl + +)">
+                            <i data-lucide="zoom-in" class="w-4 h-4"></i>
+                        </button>
+                        <select id="zoomPresetSelect" onchange="handleZoomPresetChange(event)" class="bg-slate-800 text-slate-300 rounded border-none px-1 py-0.5 focus:outline-none">
+                            <option value="auto">自動適應</option>
+                            <option value="page-fit">完整頁面</option>
+                            <option value="page-width">適應寬度</option>
+                            <option value="0.5">50%</option>
+                            <option value="1.0" selected>100%</option>
+                            <option value="1.5">150%</option>
+                            <option value="2.0">200%</option>
+                        </select>
+                    </div>
+
+                    <!-- 全螢幕播放按鈕 -->
+                    <button onclick="toggleFullscreen()" class="flex items-center space-x-1.5 bg-red-600 hover:bg-red-500 text-white font-bold px-4 py-2 rounded-lg text-sm shadow-lg shadow-red-900/20 hover:scale-[1.02] transition active:scale-[0.98]" title="全螢幕播放簡報 (F / F11)">
+                        <i data-lucide="expand" class="w-4 h-4"></i>
+                        <span>全螢幕簡報</span>
+                    </button>
+                </div>
+            </footer>
+        </main>
+    </div>
+
+    <!-- 快捷鍵說明視窗 -->
+    <div id="helpModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div class="bg-slate-950 border border-slate-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl">
+            <div class="flex justify-between items-center mb-4 border-b border-slate-800 pb-3">
+                <h3 class="text-lg font-bold flex items-center gap-2 text-red-500">
+                    <i data-lucide="help-circle" class="w-5 h-5"></i> 簡報播放器快捷鍵指南
+                </h3>
+                <button onclick="toggleHelpModal()" class="text-slate-400 hover:text-white">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <div class="space-y-3 text-sm text-slate-300 max-h-96 overflow-y-auto">
+                <div class="grid grid-cols-2 gap-2 border-b border-slate-900 py-1.5">
+                    <span class="font-bold text-slate-400">下一頁</span>
+                    <span>Space, PageDown, →, ↓</span>
+                </div>
+                <div class="grid grid-cols-2 gap-2 border-b border-slate-900 py-1.5">
+                    <span class="font-bold text-slate-400">上一頁</span>
+                    <span>Shift + Space, PageUp, ←, ↑</span>
+                </div>
+                <div class="grid grid-cols-2 gap-2 border-b border-slate-900 py-1.5">
+                    <span class="font-bold text-slate-400">跳到第一頁 / 最末頁</span>
+                    <span>Home / End</span>
+                </div>
+                <div class="grid grid-cols-2 gap-2 border-b border-slate-900 py-1.5">
+                    <span class="font-bold text-slate-400">切換全螢幕簡報</span>
+                    <span>F / F11</span>
+                </div>
+                <div class="grid grid-cols-2 gap-2 border-b border-slate-900 py-1.5">
+                    <span class="font-bold text-slate-400">放大 / 縮小 / 自適應</span>
+                    <span>+ / - / 0</span>
+                </div>
+                <div class="grid grid-cols-2 gap-2 border-b border-slate-900 py-1.5">
+                    <span class="font-bold text-slate-400">互動工具切換</span>
+                    <span>L (雷射筆), P (畫筆), C (游標)</span>
+                </div>
+                <div class="grid grid-cols-2 gap-2 border-b border-slate-900 py-1.5">
+                    <span class="font-bold text-slate-400">開啟側邊欄</span>
+                    <span>M</span>
+                </div>
+            </div>
+            <button onclick="toggleHelpModal()" class="mt-6 w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-2 rounded-lg text-sm transition">
+                我知道了
+            </button>
+        </div>
+    </div>
+
+    <!-- 快捷鍵浮動提示按鈕 -->
+    <button onclick="toggleHelpModal()" class="fixed bottom-24 right-6 bg-slate-950/80 hover:bg-slate-900 border border-slate-800 p-2.5 rounded-full text-slate-400 hover:text-white transition shadow-lg z-40" title="操作說明與快捷鍵">
+        <i data-lucide="help-circle" class="w-5 h-5"></i>
+    </button>
+
+    <script>
+        // 初始化 Lucide 圖標
+        lucide.createIcons();
+
+        // 全域變數定義
+        let pdfDoc = null;
+        let currentPageNum = 1;
+        let totalPages = 0;
+        let currentZoom = 1.0;
+        let viewMode = 'single'; // 'single' (單頁簡報), 'continuous' (連續捲動)
+        let zoomMode = 'auto'; // 'auto', 'page-fit', 'page-width', 'custom'
+        let fileLoaded = false;
+        let interactionTool = 'cursor'; // 'cursor', 'laser', 'pen'
+
+        // 簡報筆/滑鼠隱藏控制
+        let controlHideTimeout = null;
+        let controlsVisible = true;
+
+        // 畫筆與雷射筆相關變數
+        const drawingCanvas = document.getElementById('drawingCanvas');
+        const drawingCtx = drawingCanvas.getContext('2d');
+        const laserPointer = document.getElementById('laserPointer');
+        let isDrawing = false;
+        let penColor = '#ef4444'; // 預設紅色畫筆
+        let penWidth = 3;
+        let drawingsByPage = {}; // 紀錄每一頁的筆跡陣列
+
+        // 監聽鍵盤事件
+        document.addEventListener('keydown', handleKeyDown);
+
+        // 監聽視窗縮放
+        window.addEventListener('resize', handleResize);
+
+        // 監聽全螢幕變化
+        document.addEventListener('fullscreenchange', handleFullscreenChange);
+        document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+
+        // 拖曳檔案處理
+        function dragOverHandler(ev) {
+            ev.preventDefault();
+            document.getElementById('dropzone').classList.add('border-red-500', 'bg-slate-950/80');
+        }
+
+        function dragLeaveHandler(ev) {
+            ev.preventDefault();
+            document.getElementById('dropzone').classList.remove('border-red-500', 'bg-slate-950/80');
+        }
+
+        function dropHandler(ev) {
+            ev.preventDefault();
+            document.getElementById('dropzone').classList.remove('border-red-500', 'bg-slate-950/80');
+            
+            if (ev.dataTransfer.items) {
+                if (ev.dataTransfer.items[0].kind === 'file') {
+                    const file = ev.dataTransfer.items[0].getAsFile();
+                    if (file.type === 'application/pdf') {
+                        loadPDFFile(file);
+                    } else {
+                        showNotice('請上傳正確的 PDF 格式檔案');
+                    }
+                }
+            } else {
+                const file = ev.dataTransfer.files[0];
+                if (file.type === 'application/pdf') {
+                    loadPDFFile(file);
+                }
+            }
+        }
+
+        function triggerFileInput() {
+            document.getElementById('fileInput').click();
+        }
+
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (file && file.type === 'application/pdf') {
+                loadPDFFile(file);
+            }
+        }
+
+        // 載入 PDF 檔案核心邏輯
+        function loadPDFFile(file) {
+            document.getElementById('fileName').innerText = file.name;
+            document.getElementById('dropzone').classList.add('hidden');
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const typedarray = new Uint8Array(e.target.result);
+                
+                // 載入 PDF 數據
+                pdfjsLib.getDocument(typedarray).promise.then(function(pdf) {
+                    pdfDoc = pdf;
+                    totalPages = pdf.numPages;
+                    document.getElementById('totalPagesText').innerText = totalPages;
+                    document.getElementById('floatingTotalPages').innerText = totalPages;
+                    
+                    currentPageNum = 1;
+                    fileLoaded = true;
+                    drawingsByPage = {}; // 重設所有塗鴉記錄
+
+                    // 建立縮圖
+                    renderThumbnails();
+
+                    // 渲染主畫面
+                    setViewMode(viewMode, true);
+                    showNotice('PDF 檔案載入成功');
+                }).catch(err => {
+                    console.error('PDF 載入錯誤:', err);
+                    showNotice('載入失敗，檔案可能已損毀或不支援');
+                });
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        // 渲染左側縮圖
+        async function renderThumbnails() {
+            const container = document.getElementById('thumbnailContainer');
+            container.innerHTML = '';
+
+            for (let i = 1; i <= totalPages; i++) {
+                const thumbWrapper = document.createElement('div');
+                thumbWrapper.className = `flex flex-col items-center p-2 rounded-lg cursor-pointer transition ${i === currentPageNum ? 'bg-red-500/10 border border-red-500/30' : 'hover:bg-slate-900 border border-transparent'}`;
+                thumbWrapper.id = `thumb-page-${i}`;
+                thumbWrapper.onclick = () => goToPage(i);
+
+                const canvas = document.createElement('canvas');
+                canvas.className = 'w-full object-contain bg-slate-800 rounded shadow-md max-h-36';
+                thumbWrapper.appendChild(canvas);
+
+                const label = document.createElement('span');
+                label.className = 'text-[10px] mt-1.5 text-slate-400 font-bold';
+                label.innerText = `第 ${i} 頁`;
+                thumbWrapper.appendChild(label);
+
+                container.appendChild(thumbWrapper);
+
+                // 異步渲染縮圖
+                renderSingleThumbnail(i, canvas);
+            }
+        }
+
+        async function renderSingleThumbnail(pageNum, canvas) {
+            try {
+                const page = await pdfDoc.getPage(pageNum);
+                const viewport = page.getViewport({ scale: 0.25 });
+                const context = canvas.getContext('2d');
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+
+                await page.render({
+                    canvasContext: context,
+                    viewport: viewport
+                }).promise;
+            } catch (e) {
+                console.error(`縮圖第 ${pageNum} 頁繪製錯誤`, e);
+            }
+        }
+
+        // 更新選取的縮圖高亮
+        function updateActiveThumbnail() {
+            for (let i = 1; i <= totalPages; i++) {
+                const thumb = document.getElementById(`thumb-page-${i}`);
+                if (thumb) {
+                    if (i === currentPageNum) {
+                        thumb.classList.add('bg-red-500/10', 'border-red-500/30');
+                        thumb.classList.remove('hover:bg-slate-900', 'border-transparent');
+                        // 自動滾動縮圖側邊欄
+                        thumb.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    } else {
+                        thumb.classList.remove('bg-red-500/10', 'border-red-500/30');
+                        thumb.classList.add('hover:bg-slate-900', 'border-transparent');
+                    }
+                }
+            }
+        }
+
+        // 設定檢視模式 (單頁 / 連續)
+        function setViewMode(mode, forceRender = false) {
+            if (!pdfDoc) return;
+            if (viewMode === mode && !forceRender) return;
+
+            viewMode = mode;
+            
+            const btnSingle = document.getElementById('btnViewSingle');
+            const btnContinuous = document.getElementById('btnViewContinuous');
+
+            if (mode === 'single') {
+                btnSingle.className = 'px-3 py-1 rounded text-xs font-semibold flex items-center space-x-1 bg-slate-700 text-white';
+                btnContinuous.className = 'px-3 py-1 rounded text-xs font-semibold flex items-center space-x-1 text-slate-400 hover:text-white';
+                // 清空 Canvas 容器
+                document.getElementById('pdfViewer').innerHTML = '';
+                // 渲染當前頁
+                renderPage(currentPageNum);
+            } else {
+                btnContinuous.className = 'px-3 py-1 rounded text-xs font-semibold flex items-center space-x-1 bg-slate-700 text-white';
+                btnSingle.className = 'px-3 py-1 rounded text-xs font-semibold flex items-center space-x-1 text-slate-400 hover:text-white';
+                // 渲染所有頁面
+                renderAllPages();
+            }
+
+            resetDrawingCanvasSize();
+        }
+
+        // 渲染單頁模式
+        async function renderPage(pageNum) {
+            if (!pdfDoc || pageNum < 1 || pageNum > totalPages) return;
+
+            const viewer = document.getElementById('pdfViewer');
+            viewer.innerHTML = ''; // 清空先前內容
+
+            const pageContainer = document.createElement('div');
+            pageContainer.className = 'relative pdf-canvas-container';
+            pageContainer.id = `page-container-${pageNum}`;
+            viewer.appendChild(pageContainer);
+
+            const canvas = document.createElement('canvas');
+            canvas.id = `canvas-page-${pageNum}`;
+            pageContainer.appendChild(canvas);
+
+            try {
+                const page = await pdfDoc.getPage(pageNum);
+                
+                // 計算自適應縮放比例
+                const calculatedScale = getFitScale(page);
+                currentZoom = calculatedScale;
+                updateZoomText();
+
+                const viewport = page.getViewport({ scale: currentZoom });
+                const context = canvas.getContext('2d');
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+
+                await page.render({
+                    canvasContext: context,
+                    viewport: viewport
+                }).promise;
+
+                // 更新頁碼狀態
+                currentPageNum = pageNum;
+                document.getElementById('pageNumberInput').value = pageNum;
+                document.getElementById('floatingCurrentPage').innerText = pageNum;
+                updateActiveThumbnail();
+
+                // 每次重繪畫布需要重新調整繪圖畫布大小
+                setTimeout(resetDrawingCanvasSize, 50);
+
+            } catch (e) {
+                console.error('頁面渲染錯誤', e);
+            }
+        }
+
+        // 渲染所有頁面 (連續滾動模式)
+        async function renderAllPages() {
+            if (!pdfDoc) return;
+            const viewer = document.getElementById('pdfViewer');
+            viewer.innerHTML = '';
+
+            for (let i = 1; i <= totalPages; i++) {
+                const pageContainer = document.createElement('div');
+                pageContainer.className = 'relative pdf-canvas-container';
+                pageContainer.id = `page-container-${i}`;
+                pageContainer.setAttribute('data-page-number', i);
+                viewer.appendChild(pageContainer);
+
+                const canvas = document.createElement('canvas');
+                canvas.id = `canvas-page-${i}`;
+                pageContainer.appendChild(canvas);
+
+                await renderPageInContinuous(i, canvas);
+            }
+
+            // 更新為第一頁
+            currentPageNum = 1;
+            document.getElementById('pageNumberInput').value = 1;
+            document.getElementById('floatingCurrentPage').innerText = 1;
+            updateActiveThumbnail();
+            
+            setTimeout(resetDrawingCanvasSize, 100);
+        }
+
+        // 輔助：渲染連續滾動模式中的單個 Canvas
+        async function renderPageInContinuous(pageNum, canvas) {
+            try {
+                const page = await pdfDoc.getPage(pageNum);
+                const calculatedScale = getFitScale(page);
+                
+                // 在連續模式，通常使用固定的自適應縮放或手動設定
+                const viewport = page.getViewport({ scale: calculatedScale });
+                const context = canvas.getContext('2d');
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+
+                await page.render({
+                    canvasContext: context,
+                    viewport: viewport
+                }).promise;
+            } catch (e) {
+                console.error(`渲染連續第 ${pageNum} 頁出錯`, e);
+            }
+        }
+
+        // 計算最佳自適應螢幕的大小比例
+        function getFitScale(page) {
+            const container = document.getElementById('viewerScrollContainer');
+            const padding = 32; // 四周留空
+            const containerWidth = container.clientWidth - padding;
+            const containerHeight = container.clientHeight - padding;
+            
+            const viewport = page.getViewport({ scale: 1.0 });
+            
+            if (zoomMode === 'page-fit') {
+                const scaleX = containerWidth / viewport.width;
+                const scaleY = containerHeight / viewport.height;
+                return Math.min(scaleX, scaleY);
+            } else if (zoomMode === 'page-width') {
+                return containerWidth / viewport.width;
+            } else if (zoomMode === 'auto') {
+                // 自動模式：依據簡報比例與螢幕比例智慧調整
+                const scaleX = containerWidth / viewport.width;
+                const scaleY = containerHeight / viewport.height;
+                return Math.min(scaleX, scaleY);
+            } else {
+                // 使用自定義比例
+                return currentZoom;
+            }
+        }
+
+        // 連續滾動時偵測目前處於哪一頁
+        function handleContainerScroll() {
+            if (!pdfDoc || viewMode !== 'continuous') return;
+            
+            const container = document.getElementById('viewerScrollContainer');
+            const scrollTop = container.scrollTop;
+            const containers = document.querySelectorAll('.pdf-canvas-container');
+            
+            let currentVisiblePage = 1;
+            let minDistance = Infinity;
+
+            containers.forEach(elem => {
+                const rect = elem.getBoundingClientRect();
+                const containerRect = container.getBoundingClientRect();
+                // 找出距離可視區中點最近的 Canvas 頁面
+                const distance = Math.abs((rect.top + rect.height/2) - (containerRect.top + containerRect.height/2));
+                if (distance < minDistance) {
+                    minDistance = distance;
+                    currentVisiblePage = parseInt(elem.getAttribute('data-page-number'));
+                }
+            });
+
+            if (currentPageNum !== currentVisiblePage) {
+                currentPageNum = currentVisiblePage;
+                document.getElementById('pageNumberInput').value = currentPageNum;
+                document.getElementById('floatingCurrentPage').innerText = currentPageNum;
+                updateActiveThumbnail();
+                resetDrawingCanvasSize(); // 重調繪圖布大小與對齊
+            }
+        }
+
+        // 翻頁邏輯
+        function prevPage() {
+            if (!pdfDoc) return;
+            if (currentPageNum > 1) {
+                goToPage(currentPageNum - 1);
+            }
+        }
+
+        function nextPage() {
+            if (!pdfDoc) return;
+            if (currentPageNum < totalPages) {
+                goToPage(currentPageNum + 1);
+            }
+        }
+
+        function goToPage(pageNum) {
+            if (!pdfDoc || pageNum < 1 || pageNum > totalPages) return;
+
+            if (viewMode === 'single') {
+                renderPage(pageNum);
+            } else {
+                // 連續模式：平滑滾動到目標頁
+                const targetContainer = document.getElementById(`page-container-${pageNum}`);
+                if (targetContainer) {
+                    targetContainer.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    currentPageNum = pageNum;
+                    document.getElementById('pageNumberInput').value = pageNum;
+                    document.getElementById('floatingCurrentPage').innerText = pageNum;
+                    updateActiveThumbnail();
+                }
+            }
+        }
+
+        function goToPageFromInput() {
+            const input = document.getElementById('pageNumberInput');
+            let val = parseInt(input.value);
+            if (isNaN(val)) return;
+            if (val < 1) val = 1;
+            if (val > totalPages) val = totalPages;
+            goToPage(val);
+        }
+
+        // 縮放控制
+        function zoomIn() {
+            if (!pdfDoc) return;
+            zoomMode = 'custom';
+            currentZoom = Math.min(currentZoom + 0.1, 4.0);
+            applyZoomChange();
+        }
+
+        function zoomOut() {
+            if (!pdfDoc) return;
+            zoomMode = 'custom';
+            currentZoom = Math.max(currentZoom - 0.1, 0.3);
+            applyZoomChange();
+        }
+
+        function applyZoomChange() {
+            document.getElementById('zoomPresetSelect').value = 'custom';
+            setViewMode(viewMode, true); // 強制重新繪製
+            updateZoomText();
+        }
+
+        function handleZoomPresetChange(event) {
+            const value = event.target.value;
+            if (value === 'auto' || value === 'page-fit' || value === 'page-width') {
+                zoomMode = value;
+            } else {
+                zoomMode = 'custom';
+                currentZoom = parseFloat(value);
+            }
+            setViewMode(viewMode, true);
+        }
+
+        function updateZoomText() {
+            document.getElementById('zoomPercentText').innerText = `${Math.round(currentZoom * 100)}%`;
+        }
+
+        // 視窗尺寸改變時適應比例
+        function handleResize() {
+            if (!pdfDoc) return;
+            if (zoomMode === 'auto' || zoomMode === 'page-fit' || zoomMode === 'page-width') {
+                setViewMode(viewMode, true);
+            } else {
+                resetDrawingCanvasSize();
+            }
+        }
+
+        // 快捷鍵控制
+        function handleKeyDown(event) {
+            // 忽略文字輸入框內的按鍵
+            if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'SELECT') {
+                return;
+            }
+
+            switch(event.key) {
+                case ' ': // 空白鍵：下一頁
+                    event.preventDefault();
+                    if (event.shiftKey) {
+                        prevPage();
+                    } else {
+                        nextPage();
+                    }
+                    break;
+                case 'ArrowRight':
+                case 'ArrowDown':
+                case 'PageDown':
+                    event.preventDefault();
+                    nextPage();
+                    break;
+                case 'ArrowLeft':
+                case 'ArrowUp':
+                case 'PageUp':
+                    event.preventDefault();
+                    prevPage();
+                    break;
+                case 'Home':
+                    event.preventDefault();
+                    goToPage(1);
+                    break;
+                case 'End':
+                    event.preventDefault();
+                    goToPage(totalPages);
+                    break;
+                case 'f':
+                case 'F':
+                case 'F11':
+                    event.preventDefault();
+                    toggleFullscreen();
+                    break;
+                case 'm':
+                case 'M':
+                    toggleSidebar();
+                    break;
+                case '+':
+                case '=':
+                    zoomIn();
+                    break;
+                case '-':
+                case '_':
+                    zoomOut();
+                    break;
+                case '0':
+                    zoomMode = 'auto';
+                    setViewMode(viewMode, true);
+                    break;
+                case 'l':
+                case 'L':
+                    setInteractionTool('laser');
+                    break;
+                case 'p':
+                case 'P':
+                    setInteractionTool('pen');
+                    break;
+                case 'c':
+                case 'C':
+                    setInteractionTool('cursor');
+                    break;
+            }
+        }
+
+        // 全螢幕切換
+        function toggleFullscreen() {
+            const mainArea = document.getElementById('presentationViewport');
+            if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+                // 進入全螢幕
+                if (mainArea.requestFullscreen) {
+                    mainArea.requestFullscreen();
+                } else if (mainArea.webkitRequestFullscreen) {
+                    mainArea.webkitRequestFullscreen();
+                }
+            } else {
+                // 退出全螢幕
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                } else if (document.webkitExitFullscreen) {
+                    document.webkitExitFullscreen();
+                }
+            }
+        }
+
+        // 偵測並處理全螢幕 UI 樣式改變
+        function handleFullscreenChange() {
+            const mainArea = document.getElementById('presentationViewport');
+            const isFs = document.fullscreenElement || document.webkitFullscreenElement;
+            const topNavbar = document.getElementById('topNavbar');
+            const controlBar = document.getElementById('controlBar');
+
+            if (isFs) {
+                // 全螢幕下隱藏頂端欄並將背景設為純黑（最適合投影）
+                topNavbar.classList.add('hidden');
+                controlBar.classList.add('bg-slate-950/20', 'border-t-0');
+                
+                // 啟用滑鼠閒置自動隱藏底部工具列功能
+                enableIdleUIHider();
+                showNotice('進入全螢幕簡報模式 (按 ESC 退出)');
+            } else {
+                // 恢復標準模式樣式
+                topNavbar.classList.remove('hidden');
+                controlBar.classList.remove('bg-slate-950/20', 'border-t-0');
+                controlBar.classList.remove('translate-y-full');
+                disableIdleUIHider();
+            }
+
+            // 全螢幕改變後尺寸會異動，重設比例
+            setTimeout(handleResize, 150);
+        }
+
+        // 側邊欄切換
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            if (sidebar.classList.contains('-translate-x-full')) {
+                sidebar.classList.remove('-translate-x-full');
+                sidebar.classList.add('translate-x-0');
+            } else {
+                sidebar.classList.remove('translate-x-0');
+                sidebar.classList.add('-translate-x-full');
+            }
+            setTimeout(handleResize, 350); // 動畫完成後重新適應寬度
+        }
+
+        // 控制全螢幕下，閒置滑鼠隱藏控制項
+        function enableIdleUIHider() {
+            const controlBar = document.getElementById('controlBar');
+            const floatingIndicator = document.getElementById('pageIndicatorFloating');
+
+            document.addEventListener('mousemove', showUIOnMouseMove);
+            
+            function showUIOnMouseMove() {
+                controlBar.classList.remove('translate-y-full', 'opacity-0');
+                floatingIndicator.classList.remove('opacity-0');
+                document.body.style.cursor = interactionTool === 'laser' ? 'none' : 'default';
+
+                clearTimeout(controlHideTimeout);
+                controlHideTimeout = setTimeout(() => {
+                    if (document.fullscreenElement || document.webkitFullscreenElement) {
+                        controlBar.classList.add('translate-y-full', 'opacity-0');
+                        floatingIndicator.classList.add('opacity-0');
+                        // 如果雷射筆沒開啟，且全螢幕控制項隱藏時，把一般游標也隱藏
+                        if (interactionTool !== 'laser') {
+                            document.body.style.cursor = 'none';
+                        }
+                    }
+                }, 3000); // 3 秒沒移動滑鼠即隱藏
+            }
+
+            // 全域保存事件引用以供解除
+            window._showUIOnMouseMove = showUIOnMouseMove;
+        }
+
+        function disableIdleUIHider() {
+            clearTimeout(controlHideTimeout);
+            document.removeEventListener('mousemove', window._showUIOnMouseMove);
+            document.body.style.cursor = 'default';
+            
+            const controlBar = document.getElementById('controlBar');
+            const floatingIndicator = document.getElementById('pageIndicatorFloating');
+            
+            controlBar.classList.remove('translate-y-full', 'opacity-0');
+            floatingIndicator.classList.add('opacity-0');
+        }
+
+        // 設定雷射筆 / 畫筆
+        function setInteractionTool(tool) {
+            interactionTool = tool;
+
+            // UI 狀態切換
+            document.getElementById('toolCursor').className = "p-2 rounded-lg text-slate-400 hover:text-white transition flex items-center justify-center";
+            document.getElementById('toolLaser').className = "p-2 rounded-lg text-slate-400 hover:text-white transition flex items-center justify-center";
+            document.getElementById('toolPen').className = "p-2 rounded-lg text-slate-400 hover:text-white transition flex items-center justify-center";
+            document.getElementById('penOptions').classList.add('hidden');
+
+            drawingCanvas.className = ''; // 重設 class
+
+            if (tool === 'cursor') {
+                document.getElementById('toolCursor').classList.add('bg-slate-800', 'text-red-500');
+                document.body.style.cursor = 'default';
+                laserPointer.style.display = 'none';
+            } else if (tool === 'laser') {
+                document.getElementById('toolLaser').classList.add('bg-slate-800', 'text-red-500');
+                drawingCanvas.classList.add('active-laser');
+                document.body.style.cursor = 'none'; // 隱藏原生游標
+            } else if (tool === 'pen') {
+                document.getElementById('toolPen').classList.add('bg-slate-800', 'text-red-500');
+                document.getElementById('penOptions').classList.remove('hidden');
+                drawingCanvas.classList.add('active-draw');
+                document.body.style.cursor = 'crosshair';
+                laserPointer.style.display = 'none';
+            }
+        }
+
+        // 智慧型對齊：重配繪圖 Canvas 大小以完全對準當前 PDF Canvas
+        function resetDrawingCanvasSize() {
+            const currentCanvas = document.getElementById(`canvas-page-${currentPageNum}`);
+            if (!currentCanvas) return;
+
+            const rect = currentCanvas.getBoundingClientRect();
+            const parentRect = document.getElementById('viewerScrollContainer').getBoundingClientRect();
+
+            // 設定繪圖 canvas 的物理像素與顯示樣式位置
+            drawingCanvas.style.top = `${currentCanvas.offsetTop}px`;
+            drawingCanvas.style.left = `${currentCanvas.offsetLeft}px`;
+            drawingCanvas.style.width = `${currentCanvas.offsetWidth}px`;
+            drawingCanvas.style.height = `${currentCanvas.offsetHeight}px`;
+
+            drawingCanvas.width = currentCanvas.offsetWidth;
+            drawingCanvas.height = currentCanvas.offsetHeight;
+
+            // 重新繪製該頁面已存的筆跡
+            redrawCurrentPageDrawings();
+        }
+
+        // 綁定畫筆/雷射筆實時交互
+        drawingCanvas.addEventListener('mousedown', startDrawing);
+        drawingCanvas.addEventListener('mousemove', draw);
+        document.addEventListener('mouseup', stopDrawing);
+
+        // 支援行動裝置觸控
+        drawingCanvas.addEventListener('touchstart', (e) => {
+            const touch = e.touches[0];
+            const mouseEvent = new MouseEvent('mousedown', {
+                clientX: touch.clientX,
+                clientY: touch.clientY
+            });
+            drawingCanvas.dispatchEvent(mouseEvent);
+        }, {passive: true});
+
+        drawingCanvas.addEventListener('touchmove', (e) => {
+            const touch = e.touches[0];
+            const mouseEvent = new MouseEvent('mousemove', {
+                clientX: touch.clientX,
+                clientY: touch.clientY
+            });
+            drawingCanvas.dispatchEvent(mouseEvent);
+        }, {passive: true});
+
+        drawingCanvas.addEventListener('touchend', () => {
+            const mouseEvent = new MouseEvent('mouseup', {});
+            document.dispatchEvent(mouseEvent);
+        });
+
+        function startDrawing(e) {
+            if (interactionTool !== 'pen') return;
+            isDrawing = true;
+            
+            const rect = drawingCanvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+
+            drawingCtx.beginPath();
+            drawingCtx.moveTo(x, y);
+            drawingCtx.strokeStyle = penColor;
+            drawingCtx.lineWidth = penWidth;
+            drawingCtx.lineCap = 'round';
+            drawingCtx.lineJoin = 'round';
+
+            // 紀錄軌跡起點
+            if (!drawingsByPage[currentPageNum]) {
+                drawingsByPage[currentPageNum] = [];
+            }
+            drawingsByPage[currentPageNum].push({
+                type: 'start',
+                x: x / drawingCanvas.width, // 使用百分比存儲，防範不同解析度縮放位移
+                y: y / drawingCanvas.height,
+                color: penColor,
+                width: penWidth
+            });
+        }
+
+        function draw(e) {
+            const rect = drawingCanvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+
+            // 1. 處理雷射筆移動
+            if (interactionTool === 'laser') {
+                laserPointer.style.display = 'block';
+                // 對齊視窗絕對座標
+                laserPointer.style.top = `${e.clientY}px`;
+                laserPointer.style.left = `${e.clientX}px`;
+                return;
+            }
+
+            // 2. 處理畫筆標記
+            if (!isDrawing || interactionTool !== 'pen') return;
+
+            drawingCtx.lineTo(x, y);
+            drawingCtx.stroke();
+
+            // 存儲軌跡路徑
+            drawingsByPage[currentPageNum].push({
+                type: 'draw',
+                x: x / drawingCanvas.width,
+                y: y / drawingCanvas.height
+            });
+        }
+
+        function stopDrawing() {
+            if (isDrawing) {
+                isDrawing = false;
+                if (drawingsByPage[currentPageNum]) {
+                    drawingsByPage[currentPageNum].push({ type: 'end' });
+                }
+            }
+        }
+
+        // 設定畫筆顏色
+        function setPenColor(color) {
+            penColor = color;
+            // 給予按鈕選取回饋
+            const colorButtons = document.querySelectorAll('#penOptions button:not([title])');
+            colorButtons.forEach(btn => {
+                const btnColor = btn.classList.contains('bg-red-500') ? '#ef4444' :
+                                 btn.classList.contains('bg-blue-500') ? '#3b82f6' :
+                                 btn.classList.contains('bg-green-500') ? '#22c55e' : '#eab308';
+                
+                if (btnColor === color) {
+                    btn.classList.add('ring-2', 'ring-white', 'ring-offset-1', 'ring-offset-slate-900');
+                } else {
+                    btn.classList.remove('ring-2', 'ring-white', 'ring-offset-1', 'ring-offset-slate-900');
+                }
+            });
+        }
+
+        // 清除筆劃
+        function clearDrawings() {
+            drawingsByPage[currentPageNum] = [];
+            drawingCtx.clearRect(0, 0, drawingCanvas.width, drawingCanvas.height);
+            showNotice('已清除本頁筆跡');
+        }
+
+        // 重新重繪當前頁的所有畫筆紀錄
+        function redrawCurrentPageDrawings() {
+            const paths = drawingsByPage[currentPageNum];
+            if (!paths || paths.length === 0) return;
+
+            drawingCtx.clearRect(0, 0, drawingCanvas.width, drawingCanvas.height);
+
+            paths.forEach(point => {
+                if (point.type === 'start') {
+                    drawingCtx.beginPath();
+                    drawingCtx.moveTo(point.x * drawingCanvas.width, point.y * drawingCanvas.height);
+                    drawingCtx.strokeStyle = point.color;
+                    drawingCtx.lineWidth = point.width;
+                    drawingCtx.lineCap = 'round';
+                    drawingCtx.lineJoin = 'round';
+                } else if (point.type === 'draw') {
+                    drawingCtx.lineTo(point.x * drawingCanvas.width, point.y * drawingCanvas.height);
+                    drawingCtx.stroke();
+                } else if (point.type === 'end') {
+                    // 結束路徑
+                }
+            });
+        }
+
+        // 快捷鍵說明視窗控制
+        function toggleHelpModal() {
+            const modal = document.getElementById('helpModal');
+            modal.classList.toggle('hidden');
+        }
+
+        // 彈出式自定義系統提示框
+        function showNotice(text) {
+            // 建立通知節點
+            const notice = document.createElement('div');
+            notice.className = 'fixed bottom-24 left-6 bg-slate-950/95 border border-slate-800 text-slate-200 px-4 py-2.5 rounded-lg shadow-xl text-xs font-semibold z-50 transition-all duration-300 transform translate-y-10 opacity-0 flex items-center gap-2';
+            notice.innerHTML = `<i class="w-4 h-4 text-green-500" data-lucide="info"></i><span>${text}</span>`;
+            document.body.appendChild(notice);
+            lucide.createIcons();
+
+            // 起動畫
+            setTimeout(() => {
+                notice.classList.remove('translate-y-10', 'opacity-0');
+            }, 10);
+
+            // 自動銷毀
+            setTimeout(() => {
+                notice.classList.add('translate-y-10', 'opacity-0');
+                setTimeout(() => notice.remove(), 300);
+            }, 2500);
+        }
+
+        // 當滑鼠移出畫布時隱藏雷射筆
+        drawingCanvas.addEventListener('mouseleave', () => {
+            laserPointer.style.display = 'none';
+        });
+    </script>
+</body>
+</html>
