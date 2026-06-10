@@ -109,7 +109,7 @@
 
             <!-- 底部帳號狀態快顯 -->
             <div class="px-4">
-                <div onclick="toggleUserModal()" class="flex items-center space-x-3 p-3 bg-slate-900/60 border border-slate-800/80 rounded-xl cursor-pointer hover:bg-slate-800 hover:border-slate-700 transition">
+                <div onclick="toggleUserModal()" class="flex items-center space-x-3 p-3 bg-slate-900/60 border border-slate-800/80 rounded-xl cursor-pointer hover:bg-slate-850 hover:border-slate-700 transition">
                     <div class="w-9 h-9 bg-orange-500/10 text-orange-400 rounded-lg flex items-center justify-center">
                         <i data-lucide="user" class="w-5 h-5" id="startUserAvatar"></i>
                     </div>
@@ -285,7 +285,7 @@
                             <input type="number" id="pageNumberInput" value="1" min="1" class="w-12 bg-slate-900 border border-slate-800 rounded-lg px-1 py-0.5 text-center text-white focus:outline-none focus:border-orange-500" onchange="goToPageFromInput()">
                             <span class="text-slate-400">/ <span id="totalPagesText">0</span> 頁</span>
                         </div>
-                        <button onclick="nextPage()" class="p-1.5 bg-slate-850 hover:bg-slate-800 text-slate-220 rounded-lg transition" title="下一頁 (Space / PageDown / →)">
+                        <button onclick="nextPage()" class="p-1.5 bg-slate-855 hover:bg-slate-800 text-slate-220 rounded-lg transition" title="下一頁 (Space / PageDown / →)">
                             <i data-lucide="chevron-right" class="w-5 h-5"></i>
                         </button>
                     </div>
@@ -523,9 +523,6 @@
     </div>
 
     <script>
-        // 初始化 Lucide 圖標
-        lucide.createIcons();
-
         // 全域變數定義
         let pdfDoc = null;
         let currentPageNum = 1;
@@ -569,9 +566,17 @@
 
         // 網頁載入初始化
         window.addEventListener('load', () => {
-            // 安全載入 PDF.js Worker 設置
+            // 安全地處理跨網域的 PDF.js Worker，徹底解決在 GitHub Pages HTTPS 網域下的載入問題
             if (window.pdfjsLib) {
-                pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+                try {
+                    const workerUrl = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+                    // 透過建立 Blob 網址，繞過瀏覽器跨網域 Worker 安全政策限制
+                    const blob = new Blob([`importScripts("${workerUrl}");`], { type: 'application/javascript' });
+                    pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(blob);
+                } catch (err) {
+                    console.warn("無法以 Blob 包裹 PDF Worker，嘗試直接載入", err);
+                    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+                }
             }
             initIndexedDB();
             initFirebase();
