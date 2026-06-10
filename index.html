@@ -10,6 +10,12 @@
     <script src="https://unpkg.com/lucide@latest"></script>
     <!-- PDF.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    
+    <!-- Firebase Compat SDKs (官方同步經典版本，100% 穩定且不卡頓) -->
+    <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+
     <style>
         /* 隱藏滾動條但保留功能 */
         .no-scrollbar::-webkit-scrollbar {
@@ -285,7 +291,7 @@
                             <input type="number" id="pageNumberInput" value="1" min="1" class="w-12 bg-slate-900 border border-slate-800 rounded-lg px-1 py-0.5 text-center text-white focus:outline-none focus:border-orange-500" onchange="goToPageFromInput()">
                             <span class="text-slate-400">/ <span id="totalPagesText">0</span> 頁</span>
                         </div>
-                        <button onclick="nextPage()" class="p-1.5 bg-slate-855 hover:bg-slate-800 text-slate-220 rounded-lg transition" title="下一頁 (Space / PageDown / →)">
+                        <button onclick="nextPage()" class="p-1.5 bg-slate-850 hover:bg-slate-800 text-slate-222 rounded-lg transition" title="下一頁 (Space / PageDown / →)">
                             <i data-lucide="chevron-right" class="w-5 h-5"></i>
                         </button>
                     </div>
@@ -293,7 +299,7 @@
 
                 <!-- 簡報互動輔助工具 (雷射筆 / 畫筆) -->
                 <div class="flex items-center bg-slate-900 border border-slate-800 p-1.5 rounded-xl space-x-1">
-                    <button id="toolCursor" onclick="setInteractionTool('cursor')" class="p-2 rounded-lg text-orange-500 bg-slate-850 transition flex items-center justify-center" title="一般選取游標">
+                    <button id="toolCursor" onclick="setInteractionTool('cursor')" class="p-2 rounded-lg text-orange-500 bg-slate-855 transition flex items-center justify-center" title="一般選取游標">
                         <i data-lucide="mouse-pointer" class="w-4 h-4"></i>
                     </button>
                     <button id="toolLaser" onclick="setInteractionTool('laser')" class="p-2 rounded-lg text-slate-400 hover:text-white transition flex items-center justify-center" title="雷射筆效果 (L)">
@@ -548,7 +554,7 @@
         let drawingsByPage = {}; 
         let hasUnsavedChanges = false; 
 
-        // Firebase 相關狀態變數
+        // Firebase 相關狀態變數 (相容版)
         let auth = null;
         let db = null;
         let currentUser = null;
@@ -813,7 +819,7 @@
             renderRecentFilesList();
         }
 
-        // ==================== 動態 Firebase 安全載入及連線 ====================
+        // ==================== 動態 Firebase 安全載入及連線 (Compat SDK 更新) ====================
         function loadStoredConfigToInput() {
             const saved = localStorage.getItem('user_firebase_config');
             if (saved) {
@@ -821,48 +827,15 @@
             }
         }
 
-        async function loadFirebaseModules() {
-            if (window.firebaseModules) return window.firebaseModules;
-            try {
-                const [app, auth, firestore] = await Promise.all([
-                    import("https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js"),
-                    import("https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js"),
-                    import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js")
-                ]);
-                window.firebaseModules = {
-                    initializeApp: app.initializeApp,
-                    getAuth: auth.getAuth,
-                    signInWithEmailAndPassword: auth.signInWithEmailAndPassword,
-                    createUserWithEmailAndPassword: auth.createUserWithEmailAndPassword,
-                    signOut: auth.signOut,
-                    onAuthStateChanged: auth.onAuthStateChanged,
-                    signInAnonymously: auth.signInAnonymously,
-                    signInWithCustomToken: auth.signInWithCustomToken,
-                    getFirestore: firestore.getFirestore,
-                    doc: firestore.doc,
-                    setDoc: firestore.setDoc,
-                    getDoc: firestore.getDoc,
-                    collection: firestore.collection
-                };
-                return window.firebaseModules;
-            } catch (e) {
-                console.error("無法動態載入 Firebase 模組", e);
-                throw e;
-            }
-        }
-
         async function initFirebase() {
             try {
-                const modules = await loadFirebaseModules();
-                const { initializeApp, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, getFirestore } = modules;
-
                 let firebaseConfig = null;
                 const savedConfigStr = localStorage.getItem('user_firebase_config');
                 if (savedConfigStr) {
                     try { firebaseConfig = JSON.parse(savedConfigStr); } catch (e) {}
                 }
 
-                // 套用您提供的專屬金鑰 pdf-ppt-4daaf
+                // 預設填入您在台灣伺服器建立的專屬金鑰
                 if (!firebaseConfig) {
                     firebaseConfig = {
                         apiKey: "AIzaSyDp7W47F62UvUdSnHBkHWRFcIk_FJvtnIs",
@@ -875,18 +848,19 @@
                     };
                 }
 
-                if (!firebaseConfig.apiKey) return;
+                if (!firebaseConfig || !firebaseConfig.apiKey) return;
 
-                const app = initializeApp(firebaseConfig);
-                auth = getAuth(app);
-                db = getFirestore(app);
+                // 初始化 Firebase (使用更穩定的 Compat API)
+                const app = firebase.initializeApp(firebaseConfig);
+                auth = firebase.auth();
+                db = firebase.firestore();
 
                 const initAuth = async () => {
                     try {
                         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                            await signInWithCustomToken(auth, __initial_auth_token);
+                            await auth.signInWithCustomToken(__initial_auth_token);
                         } else {
-                            await signInAnonymously(auth);
+                            await auth.signInAnonymously();
                         }
                     } catch (err) {
                         if (err.code === 'auth/network-request-failed') {
@@ -897,7 +871,7 @@
 
                 await initAuth();
 
-                onAuthStateChanged(auth, (user) => {
+                auth.onAuthStateChanged((user) => {
                     currentUser = user;
                     updateAuthUI();
                     if (user && !user.isAnonymous) {
@@ -1762,7 +1736,7 @@
             return false;
         }
 
-        // ==================== FIREBASE 雲端同步系統 ====================
+        // ==================== FIREBASE 雲端同步系統 (使用穩定的 Doc 鍊式寫法) ====================
         function toggleUserModal() {
             document.getElementById('userModal').classList.toggle('hidden');
         }
@@ -1807,14 +1781,12 @@
                 return;
             }
 
-            const { signInWithEmailAndPassword, createUserWithEmailAndPassword } = window.firebaseModules;
-
             try {
                 if (currentAuthMode === 'login') {
-                    await signInWithEmailAndPassword(auth, email, password);
+                    await auth.signInWithEmailAndPassword(email, password);
                     showNotice('登入成功！已成功連線至雲端。');
                 } else {
-                    await createUserWithEmailAndPassword(auth, email, password);
+                    await auth.createUserWithEmailAndPassword(email, password);
                     showNotice('帳號註冊成功！歡迎使用。');
                 }
                 toggleUserModal();
@@ -1830,10 +1802,9 @@
         }
 
         async function handleLogout() {
-            const { signOut, signInAnonymously } = window.firebaseModules;
             try {
-                await signOut(auth);
-                await signInAnonymously(auth);
+                await auth.signOut();
+                await auth.signInAnonymously();
                 showNotice('您已登出線上帳號。');
                 toggleUserModal();
                 drawingsByPage = {};
@@ -1910,7 +1881,6 @@
                 return;
             }
 
-            const { doc, setDoc } = window.firebaseModules;
             const appId = typeof __app_id !== 'undefined' ? __app_id : 'pdf-presenter';
 
             const saveData = {
@@ -1926,8 +1896,9 @@
 
             try {
                 showNotice('正在同步雲端簡報進度...');
-                const userDocRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'userSettings', currentFileHash);
-                await setDoc(userDocRef, saveData);
+                // RULE 1: 使用安全且符合規範的路徑儲存資料
+                const userDocRef = db.collection('artifacts').doc(appId).collection('users').doc(currentUser.uid).collection('userSettings').doc(currentFileHash);
+                await userDocRef.set(saveData);
 
                 hasUnsavedChanges = false;
                 updateUnsavedIndicator();
@@ -1942,15 +1913,14 @@
             if (!currentUser || currentUser.isAnonymous) return;
             if (!fileLoaded) return;
 
-            const { doc, getDoc } = window.firebaseModules;
             const appId = typeof __app_id !== 'undefined' ? __app_id : 'pdf-presenter';
 
             try {
                 if (!quietMode) showNotice('正在尋找線上存檔...');
-                const userDocRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'userSettings', currentFileHash);
-                const docSnap = await getDoc(userDocRef);
+                const userDocRef = db.collection('artifacts').doc(appId).collection('users').doc(currentUser.uid).collection('userSettings').doc(currentFileHash);
+                const docSnap = await userDocRef.get();
 
-                if (docSnap.exists()) {
+                if (docSnap.exists) {
                     const savedData = docSnap.data();
                     if (savedData.drawings) drawingsByPage = JSON.parse(savedData.drawings);
                     if (savedData.viewMode) viewMode = savedData.viewMode;
