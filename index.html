@@ -315,7 +315,7 @@
                             <input type="number" id="pageNumberInput" value="1" min="1" class="w-12 bg-slate-900 border border-slate-800 rounded-lg px-1 py-0.5 text-center text-white focus:outline-none focus:border-orange-500" onchange="goToPageFromInput()">
                             <span class="text-slate-400">/ <span id="totalPagesText">0</span> 頁</span>
                         </div>
-                        <button onclick="nextPage()" class="p-1.5 bg-slate-850 hover:bg-slate-800 text-slate-222 rounded-lg transition" title="下一頁 (Space / PageDown / →)">
+                        <button onclick="nextPage()" class="p-1.5 bg-slate-850 hover:bg-slate-800 text-slate-200 rounded-lg transition" title="下一頁 (Space / PageDown / →)">
                             <i data-lucide="chevron-right" class="w-5 h-5"></i>
                         </button>
                     </div>
@@ -500,6 +500,27 @@
         </div>
     </div>
 
+    <!-- 自訂確認操作對話框 Modal (安全地取代阻斷性的瀏覽器 confirm() 函數) -->
+    <div id="confirmModal" class="hidden fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div class="bg-[#0a0c14] border border-slate-800 rounded-2xl max-w-sm w-full p-6 shadow-2xl space-y-4">
+            <div class="flex items-center gap-3">
+                <div class="bg-orange-500/10 p-2 rounded-xl text-orange-400">
+                    <i data-lucide="help-circle" class="w-5 h-5"></i>
+                </div>
+                <h3 id="confirmTitle" class="text-sm font-bold text-slate-100">確認操作</h3>
+            </div>
+            <p id="confirmMessage" class="text-xs text-slate-400 leading-relaxed">這是確認訊息內容</p>
+            <div class="flex gap-3 pt-2">
+                <button id="btnConfirmYes" class="flex-1 bg-orange-600 hover:bg-orange-500 text-white font-semibold py-2 rounded-lg text-xs transition">
+                    確定
+                </button>
+                <button id="btnConfirmNo" class="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold py-2 rounded-lg text-xs transition">
+                    取消
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- 說明與快捷鍵指南 Modal -->
     <div id="helpModal" class="hidden fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
         <div class="bg-[#0a0c14] border border-slate-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl">
@@ -586,6 +607,10 @@
         let currentFileHash = 'default_pdf_hash'; 
         let isCloudConnected = false; // 追蹤雲端連線狀態
 
+        // 自訂確認對話框回呼函數
+        let activeConfirmCallback = null;
+        let activeCancelCallback = null;
+
         // IndexedDB 本機簡報資料庫
         let dbInstance = null;
 
@@ -597,25 +622,56 @@
 
         // 網頁載入初始化 (離線優先！不自動做任何網路要求)
         window.addEventListener('load', () => {
+            // 設定極速穩定 Worker
             if (window.pdfjsLib) {
-                try {
-                    const workerUrl = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-                    const blob = new Blob([`importScripts("${workerUrl}");`], { type: 'application/javascript' });
-                    pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(blob);
-                } catch (err) {
-                    console.warn("PDF Worker 載入降級", err);
-                    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-                }
+                pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
             }
             initIndexedDB();
+            initFirebaseAndNetwork();
             loadStoredConfigToInput();
             updateTime();
             setInterval(updateTime, 1000);
             setGreeting();
             
+            // 綁定自訂確認彈窗按鈕事件
+            const btnYes = document.getElementById('btnConfirmYes');
+            const btnNo = document.getElementById('btnConfirmNo');
+            if (btnYes) btnYes.onclick = () => closeConfirmDialog(true);
+            if (btnNo) btnNo.onclick = () => closeConfirmDialog(false);
+
             // 預設更新為「本機模式」UI，完全無聲，零網路封包傳輸
             updateAuthUI();
         });
+
+        // ==================== 自訂確認對話框邏輯 (取代 confirm) ====================
+        function showConfirmDialog(title, message, onConfirm, onCancel = null) {
+            const modal = document.getElementById('confirmModal');
+            const titleEl = document.getElementById('confirmTitle');
+            const msgEl = document.getElementById('confirmMessage');
+            
+            if (modal) {
+                if (titleEl) titleEl.innerText = title;
+                if (msgEl) msgEl.innerText = message;
+                modal.classList.remove('hidden');
+                
+                activeConfirmCallback = onConfirm;
+                activeCancelCallback = onCancel;
+            }
+        }
+
+        function closeConfirmDialog(confirmed) {
+            const modal = document.getElementById('confirmModal');
+            if (modal) {
+                modal.classList.add('hidden');
+            }
+            if (confirmed && activeConfirmCallback) {
+                activeConfirmCallback();
+            } else if (!confirmed && activeCancelCallback) {
+                activeCancelCallback();
+            }
+            activeConfirmCallback = null;
+            activeCancelCallback = null;
+        }
 
         // ==================== IndexedDB 本機儲存引擎 ====================
         function initIndexedDB() {
@@ -749,7 +805,7 @@
                     currentFileHash = record.id;
                     isSampleMode = false;
 
-                    pdfjsLib.getDocument(new Uint8Array(record.data)).promise.then(function(pdf) {
+                    pdfjsLib.getDocument({ data: new Uint8Array(record.data) }).promise.then(function(pdf) {
                         pdfDoc = pdf;
                         totalPages = pdf.numPages;
                         document.getElementById('totalPagesText').innerText = totalPages;
@@ -838,7 +894,7 @@
             }
         }
 
-        // ==================== 隨選雲端連線初始化 (只在點擊存檔/登入時觸發一次) ====================
+        // ==================== 100% 離線安全網路開關初始化邏輯 ====================
         function loadStoredConfigToInput() {
             const saved = localStorage.getItem('user_firebase_config');
             if (saved) {
@@ -847,18 +903,12 @@
             }
         }
 
-        async function initFirebaseOnDemand() {
-            if (auth && isCloudConnected) return true; // 已經連線成功就不重複連線
-
+        async function initFirebaseAndNetwork() {
             try {
                 let firebaseConfig = null;
                 const savedConfigStr = localStorage.getItem('user_firebase_config');
-                let usingSavedConfig = false;
                 if (savedConfigStr) {
-                    try { 
-                        firebaseConfig = JSON.parse(savedConfigStr); 
-                        usingSavedConfig = true;
-                    } catch (e) {}
+                    try { firebaseConfig = JSON.parse(savedConfigStr); } catch (e) {}
                 }
 
                 const defaultConfig = {
@@ -879,57 +929,50 @@
                     firebaseConfig.apiKey = firebaseConfig.apiKey.trim().replace(/["']/g, "");
                 }
 
-                // 呼叫 Firebase 同步建立連線
+                // 註冊初始化
                 if (!firebase.apps.length) {
                     firebase.initializeApp(firebaseConfig);
                 }
                 auth = firebase.auth();
                 db = firebase.firestore();
 
-                // 執行登入要求
-                try {
-                    await auth.signInAnonymously();
-                    isCloudConnected = true;
+                // 🌟 關鍵修正：預設完全切斷資料庫的背景連線，保持極致安靜離線模式
+                await db.disableNetwork();
+                isCloudConnected = true;
+
+                // 開啟網頁時，自動恢復以往儲存的會員登入狀態（原生 SDK 從 Local Cache 讀取，免網速）
+                auth.onAuthStateChanged((user) => {
+                    currentUser = user;
                     updateAuthUI();
-                    return true;
-                } catch (err) {
-                    console.warn("學校網路或認證阻擋，自動切回本機保存機制", err.message);
-                    isCloudConnected = false;
-                    updateAuthUI();
-                    
-                    if (err.code === 'auth/admin-restricted-operation') {
-                        showNotice("🏫 學校TANet教育網路防火牆限制背景登入，已自動切換至【本機極速模式】。");
-                    } else {
-                        showNotice("⚠️ 連線提示：" + err.message);
-                    }
-                    return false;
-                }
+                });
+
             } catch (error) {
-                console.warn("無法啟動 Firebase 服務", error);
+                console.warn("Firebase 初始化提示 (安全進入純本機存檔狀態):", error.message);
                 isCloudConnected = false;
                 updateAuthUI();
-                return false;
             }
         }
 
-        // 只要點選設定面板，才觸發隨選連線
         async function toggleUserModal() {
             const modal = document.getElementById('userModal');
             if (modal) {
                 modal.classList.toggle('hidden');
-                if (!modal.classList.contains('hidden')) {
-                    showNotice('正在建立安全的雲端連線管道...');
-                    await initFirebaseOnDemand();
+                if (!modal.classList.contains('hidden') && auth) {
+                    // 打開帳密面板時，臨時打通網路 1 秒以更新登入認證狀態
+                    try {
+                        await db.enableNetwork();
+                        currentUser = auth.currentUser;
+                        updateAuthUI();
+                    } catch (e) {}
+                } else if (modal.classList.contains('hidden') && db) {
+                    // 面板關閉時，立刻切斷資料庫網路，回復最安全的離線狀態
+                    await db.disableNetwork();
                 }
             }
         }
 
         async function handleAuthAction() {
-            const hasConnected = await initFirebaseOnDemand();
-            if (!hasConnected) {
-                showNotice("目前受限於學校網路阻擋，無法連線。建議使用免連線的本機儲存！");
-                return;
-            }
+            if (!auth) return;
 
             const email = document.getElementById('authEmail').value.trim();
             const password = document.getElementById('authPassword').value;
@@ -940,45 +983,68 @@
             }
 
             try {
+                // 做網路操作前，臨時啟用資料庫通訊
+                await db.enableNetwork();
+
                 if (currentAuthMode === 'login') {
                     await auth.signInWithEmailAndPassword(email, password);
                 } else {
                     await auth.createUserWithEmailAndPassword(email, password);
                 }
                 
-                // 智慧修正點：登入成功後，主動設定當前帳號狀態，並一鍵強制刷新 UI 畫面！
                 currentUser = auth.currentUser;
-                isCloudConnected = true;
                 updateAuthUI();
                 
                 showNotice('🎉 登入成功！已成功連線至雲端個人儲存庫。');
                 document.getElementById('userModal').classList.add('hidden');
             } catch (error) {
                 console.warn("Auth Error details:", error);
+                
+                // 自訂確認對話框：取代原生 confirm 避免 iframe 沙盒崩潰
+                if (error.code === 'auth/invalid-credential' || error.code === 'auth/user-not-found') {
+                    showConfirmDialog(
+                        "帳號尚未註冊",
+                        `您輸入的帳號「${email}」尚未註冊過。\n\n是否直接為您「建立這個新帳號」並完成登入？`,
+                        async () => {
+                            try {
+                                showNotice('正在為您註冊並初始化新帳號...');
+                                await auth.createUserWithEmailAndPassword(email, password);
+                                
+                                currentUser = auth.currentUser;
+                                updateAuthUI();
+                                
+                                showNotice('🎉 帳號建立並登入成功！已成功開通雲端空間。');
+                                document.getElementById('userModal').classList.add('hidden');
+                            } catch (regError) {
+                                showNotice('建立帳號失敗：' + regError.message);
+                            }
+                        }
+                    );
+                    return;
+                }
+
                 let msg = '認證失敗：' + error.message;
                 if (error.code === 'auth/email-already-in-use') {
                     msg = '此信箱已被註冊，請切換至【登入】。';
                 } else if (error.code === 'auth/wrong-password') {
                     msg = '密碼輸入錯誤，請重新確認。';
-                } else if (error.code === 'auth/user-not-found') {
-                    msg = '找不到此電子信箱，請先【註冊】。';
                 } else if (error.code === 'auth/invalid-email') {
                     msg = '電子信箱格式不正確！';
-                } else if (error.code === 'auth/admin-restricted-operation') {
-                    msg = '⚠️ 學校防火牆限制建立新用戶，請切換為「本機模式」照常上課使用！';
                 }
                 showNotice(msg);
+            } finally {
+                // 操作完成後，重新進入安全防禦斷網狀態
+                if (db) await db.disableNetwork();
             }
         }
 
         async function handleLogout() {
             try {
                 if (auth) {
+                    await db.enableNetwork();
                     await auth.signOut();
-                    await auth.signInAnonymously();
                 }
                 currentUser = null;
-                isCloudConnected = false;
                 showNotice('您已登出線上帳號，已自動轉換至離線本機模式。');
                 document.getElementById('userModal').classList.add('hidden');
                 drawingsByPage = {};
@@ -986,6 +1052,8 @@
                 updateAuthUI();
             } catch (error) {
                 showNotice('登出失敗。');
+            } finally {
+                if (db) await db.disableNetwork();
             }
         }
 
@@ -1027,7 +1095,7 @@
                 return;
             }
 
-            // 2. 如果已成功登入正式帳密會員 (非匿名訪客)
+            // 2. 如果已成功登入正式帳密會員
             if (currentUser && !currentUser.isAnonymous && currentUser.email) {
                 if (btnCloudSync) btnCloudSync.classList.remove('hidden');
                 if (userMenuText) userMenuText.innerText = currentUser.email.split('@')[0];
@@ -1051,7 +1119,7 @@
                     startUserAvatar.className = "w-5 h-5 text-green-400";
                 }
             } 
-            // 3. 雖然連線上 Firebase，但僅是匿名訪客模式 (未登入信箱)
+            // 3. 雖然連線上 Firebase，但僅是匿名訪客模式
             else {
                 if (btnCloudSync) btnCloudSync.classList.add('hidden');
                 if (userMenuText) userMenuText.innerText = '訪客模式';
@@ -1077,20 +1145,10 @@
             updateUnsavedIndicator();
         }
 
-        // ==================== 雲端手動存檔核心 (點擊時才會連線並寫入資料庫) ====================
+        // ==================== 雲端手動同步核心 (僅在點擊時極速連線並中斷) ====================
         async function saveDataToCloud() {
             saveToLocalStorage(); // 1. 先安全雙重備份到本機 LocalStorage
             
-            // 2. 點擊才初始化雲端連線，平滑防止背景阻擋
-            if (!auth || !isCloudConnected) {
-                showNotice('正在為您建立安全的雲端通道...');
-                const success = await initFirebaseOnDemand();
-                if (!success) {
-                    showNotice('由於學校防火牆封鎖，無法連線。已幫您安全存檔於 iPad 本機！');
-                    return;
-                }
-            }
-
             if (!currentUser || currentUser.isAnonymous) {
                 showNotice('請先登入帳號啟用雲端同步！已先將您的進度儲存於本機。');
                 toggleUserModal();
@@ -1118,6 +1176,10 @@
             };
 
             try {
+                showNotice('正在建立臨時雲端連線...');
+                // 🌟 同步時，打通網路 0.5 秒
+                await db.enableNetwork();
+
                 showNotice('正在寫入雲端資料庫...');
                 const userDocRef = db.collection('artifacts').doc(appId).collection('users').doc(currentUser.uid).collection('userSettings').doc(currentFileHash);
                 await userDocRef.set(saveData);
@@ -1128,16 +1190,22 @@
             } catch (error) {
                 console.warn("Cloud Save Failed:", error);
                 showNotice('寫入失敗，但已安全暫存於您的 iPad 本機。');
+            } finally {
+                // 🌟 存檔完畢後，立刻強制斷開網路，保持絕對離線
+                if (db) await db.disableNetwork();
             }
         }
 
         async function loadDataFromCloud(quietMode = false) {
-            if (!isCloudConnected || !currentUser || currentUser.isAnonymous) return;
+            if (!currentUser || currentUser.isAnonymous) return;
             if (!fileLoaded) return;
 
             const appId = typeof __app_id !== 'undefined' ? __app_id : 'pdf-presenter';
 
             try {
+                // 臨時啟用通訊
+                await db.enableNetwork();
+
                 if (!quietMode) showNotice('正在讀取雲端存檔...');
                 const userDocRef = db.collection('artifacts').doc(appId).collection('users').doc(currentUser.uid).collection('userSettings').doc(currentFileHash);
                 const docSnap = await userDocRef.get();
@@ -1162,6 +1230,9 @@
                 }
             } catch (error) {
                 console.warn("Cloud Load Failed:", error);
+            } finally {
+                // 讀取完畢立刻重新切斷連線
+                if (db) await db.disableNetwork();
             }
         }
 
@@ -1178,6 +1249,7 @@
             }
         }
 
+        // 讀取本機檔案
         function loadPDFFile(file) {
             const nameSpan = document.getElementById('fileName');
             if (nameSpan) nameSpan.innerText = file.name;
@@ -1189,7 +1261,7 @@
                 const arrayBuffer = e.target.result;
                 const typedarray = new Uint8Array(arrayBuffer);
                 
-                pdfjsLib.getDocument(typedarray).promise.then(function(pdf) {
+                pdfjsLib.getDocument({ data: typedarray }).promise.then(function(pdf) {
                     pdfDoc = pdf;
                     totalPages = pdf.numPages;
                     document.getElementById('totalPagesText').innerText = totalPages;
@@ -1238,7 +1310,7 @@
             hasUnsavedChanges = false;
             updateUnsavedIndicator();
 
-            currentFileHash = 'sample_built_in_slides';
+            currentFileHash = 'sample_built_slides';
 
             document.getElementById('totalPagesText').innerText = totalPages;
             document.getElementById('floatingTotalPages').innerText = totalPages;
@@ -1323,7 +1395,7 @@
                 ctx.fillText('畫筆標記不會隨網頁重整遺失', 500, 255);
                 ctx.fillText('連線失敗自動進入完全本機儲存', 500, 285);
             } else if (pageNum === 2) {
-                ctx.fillText('• 按 L 鍵啟用雷射筆，提供極致平滑的紅點光暈效果', 60, 160);
+                ctx.fillText('• 按 L 鍵啟用雷射筆，提供極致平滑 of 紅點光暈效果', 60, 160);
                 ctx.fillText('• 按 P 鍵啟用畫筆，支援多種色彩切換與多端標記線條渲染', 60, 200);
                 ctx.fillText('• 按 C 鍵還原游標，點擊選取投影片內容', 60, 240);
                 ctx.fillText('• 擁有手勢與觸控支援，完美適配 iPad 與觸碰式教學大螢幕', 60, 280);
@@ -1411,6 +1483,7 @@
                     const label = document.createElement('span');
                     label.className = 'text-[10px] mt-1.5 text-slate-400 font-bold';
                     label.innerText = `投影片 ${i}`;
+                    thumbWrapper.appendChild(label);
                     container.appendChild(thumbWrapper);
                     renderSingleThumbnail(i, canvas);
                 }
@@ -1658,6 +1731,7 @@
         }
 
         // ==================== 縮放控制 ====================
+        // 放大
         function zoomIn() {
             if (!fileLoaded) return;
             zoomMode = 'custom';
@@ -1974,7 +2048,7 @@
         function draw(e) {
             const rect = drawingCanvas.getBoundingClientRect();
             const x = e.clientX - rect.left;
-            const y = e.clientY - rect.top;
+            const calculatedY = e.clientY - rect.top;
 
             if (interactionTool === 'laser' && laserPointer) {
                 laserPointer.style.display = 'block';
@@ -1985,16 +2059,17 @@
 
             if (!isDrawing || interactionTool !== 'pen') return;
 
-            drawingCtx.lineTo(x, y);
+            drawingCtx.lineTo(x, calculatedY);
             drawingCtx.stroke();
 
             drawingsByPage[currentPageNum].push({
                 type: 'draw',
                 x: x / drawingCanvas.width,
-                y: y / drawingCanvas.height
+                y: calculatedY / drawingCanvas.height
             });
         }
 
+        // 停止繪製
         function stopDrawing() {
             if (isDrawing) {
                 isDrawing = false;
