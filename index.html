@@ -251,16 +251,41 @@
         <!-- PDF 播放展示主視窗 -->
         <main id="presentationViewport" class="flex-1 bg-slate-900/40 flex flex-col justify-between overflow-hidden relative presentation-mode">
             
-            <!-- 編輯器頂部輔助工作列 -->
+            <!-- 編輯器頂部輔助工作列 (奢華重構：一併放入檔案名稱及狀態指標) -->
             <div id="editorTopBar" class="absolute top-4 left-4 right-4 z-10 flex justify-between items-center pointer-events-none">
-                <button onclick="exitToStartScreen()" class="pointer-events-auto flex items-center gap-2 bg-[#0a0c14]/90 backdrop-blur border border-slate-800/80 text-slate-200 px-4 py-2 rounded-xl text-xs font-semibold shadow-lg hover:bg-slate-900 transition hover:border-slate-700">
-                    <i data-lucide="home" class="w-3.5 h-3.5 text-orange-500"></i>
-                    <span>回到首頁</span>
-                </button>
+                <div class="flex items-center gap-3 pointer-events-auto">
+                    <button onclick="exitToStartScreen()" class="flex items-center gap-2 bg-[#0a0c14]/90 backdrop-blur border border-slate-800/80 text-slate-200 px-4 py-2 rounded-xl text-xs font-semibold shadow-lg hover:bg-slate-900 transition hover:border-slate-700">
+                        <i data-lucide="home" class="w-3.5 h-3.5 text-orange-500"></i>
+                        <span>回到首頁</span>
+                    </button>
+                    <!-- 檔案名稱與同步狀態顯示區 -->
+                    <div class="bg-[#0a0c14]/90 backdrop-blur border border-slate-800/80 text-slate-300 px-4 py-2 rounded-xl text-xs font-semibold shadow-lg flex items-center gap-2">
+                        <i data-lucide="file-text" class="w-3.5 h-3.5 text-orange-500"></i>
+                        <span id="fileName" class="max-w-[150px] sm:max-w-[240px] truncate">未命名簡報</span>
+                        <!-- 智慧未儲存/已同步狀態小圓點 & 圖標 -->
+                        <div class="flex items-center gap-1.5 pl-2 border-l border-slate-800/80">
+                            <span id="unsavedIndicator" class="w-2 h-2 rounded-full bg-yellow-500 animate-pulse" style="display: none;"></span>
+                            <i id="syncIcon" data-lucide="check" class="w-3.5 h-3.5 text-green-400"></i>
+                        </div>
+                    </div>
+                </div>
 
-                <!-- 浮動進度指示器 -->
-                <div id="pageIndicatorFloating" class="bg-[#0a0c14]/90 backdrop-blur border border-slate-800/80 text-white px-4 py-2 rounded-full text-xs font-bold shadow-lg flex items-center gap-2">
-                    <span id="floatingCurrentPage">0</span> / <span id="floatingTotalPages">0</span>
+                <!-- 右側進度與帳號觸發按鈕 (手動點選，高安全容錯) -->
+                <div class="flex items-center gap-2 pointer-events-auto">
+                    <!-- 頂部帳號狀態按鈕 -->
+                    <button onclick="toggleUserModal()" class="flex items-center gap-2 bg-[#0a0c14]/90 backdrop-blur border border-slate-800/80 text-slate-300 px-3.5 py-2 rounded-xl text-xs font-semibold shadow-lg hover:bg-slate-900 transition hover:border-slate-700">
+                        <i id="userMenuIcon" data-lucide="shield-check" class="w-3.5 h-3.5 text-emerald-400"></i>
+                        <span id="userMenuText">本機暫存</span>
+                    </button>
+                    <!-- 雲端同步手動按鈕 (僅在連線成功時顯示) -->
+                    <button id="btnCloudSync" onclick="saveDataToCloud()" class="hidden flex items-center gap-1.5 bg-[#0a0c14]/90 backdrop-blur border border-slate-800/80 text-slate-300 px-3.5 py-2 rounded-xl text-xs font-semibold shadow-lg hover:bg-slate-900 transition hover:border-slate-700" title="一鍵同步備份至雲端">
+                        <i data-lucide="cloud-upload" class="w-3.5 h-3.5 text-orange-400"></i>
+                        <span>同步</span>
+                    </button>
+                    <!-- 浮動進度指示器 -->
+                    <div id="pageIndicatorFloating" class="bg-[#0a0c14]/90 backdrop-blur border border-slate-800/80 text-white px-4 py-2 rounded-full text-xs font-bold shadow-lg flex items-center gap-2">
+                        <span id="floatingCurrentPage">0</span> / <span id="floatingTotalPages">0</span>
+                    </div>
                 </div>
             </div>
 
@@ -332,7 +357,7 @@
                         <button onclick="zoomIn()" class="p-1 text-slate-400 hover:text-white" title="放大 (Ctrl + +)">
                             <i data-lucide="zoom-in" class="w-4 h-4"></i>
                         </button>
-                        <select id="zoomPresetSelect" onchange="handleZoomPresetChange(event)" class="bg-slate-855 text-slate-300 rounded border-none px-1 py-0.5 focus:outline-none">
+                        <select id="zoomPresetSelect" onchange="handleZoomPresetChange(event)" class="bg-slate-850 text-slate-300 rounded border-none px-1 py-0.5 focus:outline-none">
                             <option value="auto">自動適應</option>
                             <option value="page-fit">完整頁面</option>
                             <option value="page-width">適應寬度</option>
@@ -564,7 +589,7 @@
         // IndexedDB 本機簡報資料庫
         let dbInstance = null;
 
-        // 監聽鍵盤與視窗 (handleKeyDown 函數現在已在下方完美定義)
+        // 監聽鍵盤與視窗
         document.addEventListener('keydown', handleKeyDown);
         window.addEventListener('resize', handleResize);
         document.addEventListener('fullscreenchange', handleFullscreenChange);
@@ -719,7 +744,8 @@
             request.onsuccess = (event) => {
                 const record = event.target.result;
                 if (record) {
-                    document.getElementById('fileName').innerText = record.name;
+                    const nameSpan = document.getElementById('fileName');
+                    if (nameSpan) nameSpan.innerText = record.name;
                     currentFileHash = record.id;
                     isSampleMode = false;
 
@@ -742,6 +768,7 @@
                         renderThumbnails();
                         setViewMode(viewMode, true);
                         
+                        // 檢查有無本機筆刷備份
                         const restored = loadFromLocalStorage();
                         if (restored) {
                             showNotice('簡報讀取成功！已回復您的畫筆標記軌跡。');
@@ -763,8 +790,10 @@
         // ==================== 首頁 UI 輔助功能 ====================
         function updateTime() {
             const timeLabel = document.getElementById('currentTimeLabel');
-            const now = new Date();
-            timeLabel.innerText = now.toLocaleString('zh-TW', { hour12: false });
+            if (timeLabel) {
+                const now = new Date();
+                timeLabel.innerText = now.toLocaleString('zh-TW', { hour12: false });
+            }
         }
 
         function setGreeting() {
@@ -773,7 +802,8 @@
             if (hour < 12) greeting = '早上好，準備好您的簡報了嗎？';
             else if (hour < 18) greeting = '下午好，準備好您的簡報了嗎？';
             else greeting = '晚上好，準備好您的簡報了嗎？';
-            document.getElementById('greetingText').innerText = greeting;
+            const greetEl = document.getElementById('greetingText');
+            if (greetEl) greetEl.innerText = greeting;
         }
 
         function switchStartTab(tab) {
@@ -796,21 +826,15 @@
             const configContent = document.getElementById('tabConfigContent');
 
             if (tab === 'auth') {
-                authBtn.classList.add('border-orange-500', 'text-white');
-                authBtn.classList.remove('border-transparent', 'text-slate-400');
-                configBtn.classList.remove('border-orange-500', 'text-white');
-                configBtn.classList.add('border-transparent', 'text-slate-400');
-
-                authContent.classList.remove('hidden');
-                configContent.classList.add('hidden');
+                if (authBtn) authBtn.className = "flex-1 py-2 text-sm font-semibold border-b-2 border-orange-500 text-white";
+                if (configBtn) configBtn.className = "flex-1 py-2 text-sm font-semibold border-b-2 border-transparent text-slate-400 hover:text-white";
+                if (authContent) authContent.classList.remove('hidden');
+                if (configContent) configContent.classList.add('hidden');
             } else {
-                configBtn.classList.add('border-orange-500', 'text-white');
-                configBtn.classList.remove('border-transparent', 'text-slate-400');
-                authBtn.classList.remove('border-orange-500', 'text-white');
-                authBtn.classList.add('border-transparent', 'text-slate-400');
-
-                configContent.classList.remove('hidden');
-                authContent.classList.add('hidden');
+                if (configBtn) configBtn.className = "flex-1 py-2 text-sm font-semibold border-b-2 border-orange-500 text-white";
+                if (authBtn) authBtn.className = "flex-1 py-2 text-sm font-semibold border-b-2 border-transparent text-slate-400 hover:text-white";
+                if (configContent) configContent.classList.remove('hidden');
+                if (authContent) authContent.classList.add('hidden');
             }
         }
 
@@ -818,7 +842,8 @@
         function loadStoredConfigToInput() {
             const saved = localStorage.getItem('user_firebase_config');
             if (saved) {
-                document.getElementById('firebaseConfigInput').value = saved;
+                const configInput = document.getElementById('firebaseConfigInput');
+                if (configInput) configInput.value = saved;
             }
         }
 
@@ -889,10 +914,13 @@
 
         // 只要點選設定面板，才觸發隨選連線
         async function toggleUserModal() {
-            document.getElementById('userModal').classList.toggle('hidden');
-            if (!document.getElementById('userModal').classList.contains('hidden')) {
-                showNotice('正在建立安全的雲端連線管道...');
-                await initFirebaseOnDemand();
+            const modal = document.getElementById('userModal');
+            if (modal) {
+                modal.classList.toggle('hidden');
+                if (!modal.classList.contains('hidden')) {
+                    showNotice('正在建立安全的雲端連線管道...');
+                    await initFirebaseOnDemand();
+                }
             }
         }
 
@@ -975,14 +1003,18 @@
                     userMenuIcon.className = "w-4 h-4 text-emerald-400";
                 }
                 
-                startUserTitle.innerText = '本機儲存模式';
-                startUserSubtitle.innerText = '離線可用，自動暫存';
-                startUserSubtitle.className = "text-[10px] text-emerald-400 font-semibold truncate";
-                startUserAvatar.setAttribute('data-lucide', 'shield-check');
-                startUserAvatar.className = "w-5 h-5 text-emerald-400";
+                if (startUserTitle) startUserTitle.innerText = '本機儲存模式';
+                if (startUserSubtitle) {
+                    startUserSubtitle.innerText = '離線可用，自動暫存';
+                    startUserSubtitle.className = "text-[10px] text-emerald-400 font-semibold truncate";
+                }
+                if (startUserAvatar) {
+                    startUserAvatar.setAttribute('data-lucide', 'shield-check');
+                    startUserAvatar.className = "w-5 h-5 text-emerald-400";
+                }
                 
-                authContainer.classList.remove('hidden');
-                userProfileContainer.classList.add('hidden');
+                if (authContainer) authContainer.classList.remove('hidden');
+                if (userProfileContainer) userProfileContainer.classList.add('hidden');
                 lucide.createIcons();
                 return;
             }
@@ -996,16 +1028,20 @@
                     userMenuIcon.className = "w-4 h-4 text-green-400";
                 }
 
-                authContainer.classList.add('hidden');
-                userProfileContainer.classList.remove('hidden');
-                userProfileEmail.innerText = currentUser.email;
-                userProfileId.innerText = `UID: ${currentUser.uid}`;
+                if (authContainer) authContainer.classList.add('hidden');
+                if (userProfileContainer) userProfileContainer.classList.remove('hidden');
+                if (userProfileEmail) userProfileEmail.innerText = currentUser.email;
+                if (userProfileId) userProfileId.innerText = `UID: ${currentUser.uid}`;
 
-                startUserTitle.innerText = currentUser.email.split('@')[0];
-                startUserSubtitle.innerText = '雲端即時同步啟用中';
-                startUserSubtitle.className = "text-[10px] text-green-400 font-semibold truncate";
-                startUserAvatar.setAttribute('data-lucide', 'user-check');
-                startUserAvatar.className = "w-5 h-5 text-green-400";
+                if (startUserTitle) startUserTitle.innerText = currentUser.email.split('@')[0];
+                if (startUserSubtitle) {
+                    startUserSubtitle.innerText = '雲端即時同步啟用中';
+                    startUserSubtitle.className = "text-[10px] text-green-400 font-semibold truncate";
+                }
+                if (startUserAvatar) {
+                    startUserAvatar.setAttribute('data-lucide', 'user-check');
+                    startUserAvatar.className = "w-5 h-5 text-green-400";
+                }
             } else {
                 if (btnCloudSync) btnCloudSync.classList.add('hidden');
                 if (userMenuText) userMenuText.innerText = '訪客模式';
@@ -1014,14 +1050,18 @@
                     userMenuIcon.className = "w-4 h-4 text-slate-400";
                 }
 
-                authContainer.classList.remove('hidden');
-                userProfileContainer.classList.add('hidden');
+                if (authContainer) authContainer.classList.remove('hidden');
+                if (userProfileContainer) userProfileContainer.classList.add('hidden');
 
-                startUserTitle.innerText = '本機儲存模式';
-                startUserSubtitle.innerText = '離線可用，自動暫存';
-                startUserSubtitle.className = "text-[10px] text-emerald-400 font-semibold truncate";
-                startUserAvatar.setAttribute('data-lucide', 'shield-check');
-                startUserAvatar.className = "w-5 h-5 text-emerald-400";
+                if (startUserTitle) startUserTitle.innerText = '本機儲存模式';
+                if (startUserSubtitle) {
+                    startUserSubtitle.innerText = '離線可用，自動暫存';
+                    startUserSubtitle.className = "text-[10px] text-emerald-400 font-semibold truncate";
+                }
+                if (startUserAvatar) {
+                    startUserAvatar.setAttribute('data-lucide', 'shield-check');
+                    startUserAvatar.className = "w-5 h-5 text-emerald-400";
+                }
             }
             lucide.createIcons();
             updateUnsavedIndicator();
@@ -1053,10 +1093,12 @@
             }
 
             const appId = typeof __app_id !== 'undefined' ? __app_id : 'pdf-presenter';
+            const nameSpan = document.getElementById('fileName');
+            const displayTitle = nameSpan ? nameSpan.innerText : "未命名簡報";
 
             const saveData = {
                 fileHash: currentFileHash,
-                fileName: document.getElementById('fileName').innerText,
+                fileName: displayTitle,
                 lastPage: currentPageNum,
                 viewMode: viewMode,
                 zoomMode: zoomMode,
@@ -1074,7 +1116,7 @@
                 updateUnsavedIndicator();
                 showNotice('🎉 雲端備份存檔成功！');
             } catch (error) {
-                console.warn("Cloud Save Handled:", error);
+                console.warn("Cloud Save Failed:", error);
                 showNotice('寫入失敗，但已安全暫存於您的 iPad 本機。');
             }
         }
@@ -1109,13 +1151,14 @@
                     showNotice('已成功載入雲端備份！');
                 }
             } catch (error) {
-                console.warn("Cloud Load Handled:", error);
+                console.warn("Cloud Load Failed:", error);
             }
         }
 
-        // ==================== 投影片預覽與導覽控制 (完美恢復先前遺漏函數) ====================
+        // ==================== 投影片預覽與導覽控制 ====================
         function triggerFileInput() {
-            document.getElementById('fileInput').click();
+            const input = document.getElementById('fileInput');
+            if (input) input.click();
         }
 
         function handleFileSelect(event) {
@@ -1126,7 +1169,8 @@
         }
 
         function loadPDFFile(file) {
-            document.getElementById('fileName').innerText = file.name;
+            const nameSpan = document.getElementById('fileName');
+            if (nameSpan) nameSpan.innerText = file.name;
             isSampleMode = false;
             currentFileHash = btoa(encodeURIComponent(file.name + '_' + file.size)).replace(/=/g, '').substring(0, 30);
 
@@ -1174,7 +1218,8 @@
         }
 
         function loadSampleSlides() {
-            document.getElementById('fileName').innerText = "系統測試簡報檔.pdf (內建範例)";
+            const nameSpan = document.getElementById('fileName');
+            if (nameSpan) nameSpan.innerText = "系統測試簡報檔.pdf (內建範例)";
             isSampleMode = true;
             fileLoaded = true;
             totalPages = 3;
@@ -1316,49 +1361,51 @@
 
         function renderSampleThumbnails() {
             const container = document.getElementById('thumbnailContainer');
-            container.innerHTML = '';
+            if (container) {
+                container.innerHTML = '';
+                for (let i = 1; i <= totalPages; i++) {
+                    const thumbWrapper = document.createElement('div');
+                    thumbWrapper.className = `flex flex-col items-center p-2 rounded-lg cursor-pointer transition ${i === currentPageNum ? 'bg-orange-500/10 border border-orange-500/30' : 'hover:bg-slate-900 border border-transparent'}`;
+                    thumbWrapper.id = `thumb-page-${i}`;
+                    thumbWrapper.onclick = () => goToPage(i);
 
-            for (let i = 1; i <= totalPages; i++) {
-                const thumbWrapper = document.createElement('div');
-                thumbWrapper.className = `flex flex-col items-center p-2 rounded-lg cursor-pointer transition ${i === currentPageNum ? 'bg-orange-500/10 border border-orange-500/30' : 'hover:bg-slate-900 border border-transparent'}`;
-                thumbWrapper.id = `thumb-page-${i}`;
-                thumbWrapper.onclick = () => goToPage(i);
+                    const canvas = document.createElement('canvas');
+                    canvas.className = 'w-full object-contain bg-[#0a0c14] rounded shadow-md max-h-32';
+                    thumbWrapper.appendChild(canvas);
 
-                const canvas = document.createElement('canvas');
-                canvas.className = 'w-full object-contain bg-[#0a0c14] rounded shadow-md max-h-32';
-                thumbWrapper.appendChild(canvas);
+                    const label = document.createElement('span');
+                    label.className = 'text-[10px] mt-1.5 text-slate-400 font-bold';
+                    label.innerText = `Slide ${i}`;
+                    thumbWrapper.appendChild(label);
 
-                const label = document.createElement('span');
-                label.className = 'text-[10px] mt-1.5 text-slate-400 font-bold';
-                label.innerText = `Slide ${i}`;
-                thumbWrapper.appendChild(label);
-
-                container.appendChild(thumbWrapper);
-                drawSampleSlideOnCanvas(i, canvas, 0.2);
+                    container.appendChild(thumbWrapper);
+                    drawSampleSlideOnCanvas(i, canvas, 0.2);
+                }
             }
         }
 
         async function renderThumbnails() {
             const container = document.getElementById('thumbnailContainer');
-            container.innerHTML = '';
+            if (container) {
+                container.innerHTML = '';
+                for (let i = 1; i <= totalPages; i++) {
+                    const thumbWrapper = document.createElement('div');
+                    thumbWrapper.className = `flex flex-col items-center p-2 rounded-lg cursor-pointer transition ${i === currentPageNum ? 'bg-orange-500/10 border border-orange-500/30' : 'hover:bg-[#131722] border border-transparent'}`;
+                    thumbWrapper.id = `thumb-page-${i}`;
+                    thumbWrapper.onclick = () => goToPage(i);
 
-            for (let i = 1; i <= totalPages; i++) {
-                const thumbWrapper = document.createElement('div');
-                thumbWrapper.className = `flex flex-col items-center p-2 rounded-lg cursor-pointer transition ${i === currentPageNum ? 'bg-orange-500/10 border border-orange-500/30' : 'hover:bg-[#131722] border border-transparent'}`;
-                thumbWrapper.id = `thumb-page-${i}`;
-                thumbWrapper.onclick = () => goToPage(i);
+                    const canvas = document.createElement('canvas');
+                    canvas.className = 'w-full object-contain bg-[#131722] rounded shadow-md max-h-36';
+                    thumbWrapper.appendChild(canvas);
 
-                const canvas = document.createElement('canvas');
-                canvas.className = 'w-full object-contain bg-[#131722] rounded shadow-md max-h-36';
-                thumbWrapper.appendChild(canvas);
+                    const label = document.createElement('span');
+                    label.className = 'text-[10px] mt-1.5 text-slate-400 font-bold';
+                    label.innerText = `投影片 ${i}`;
+                    thumbWrapper.appendChild(label);
 
-                const label = document.createElement('span');
-                label.className = 'text-[10px] mt-1.5 text-slate-400 font-bold';
-                label.innerText = `投影片 ${i}`;
-                thumbWrapper.appendChild(label);
-
-                container.appendChild(thumbWrapper);
-                renderSingleThumbnail(i, canvas);
+                    container.appendChild(thumbWrapper);
+                    renderSingleThumbnail(i, canvas);
+                }
             }
         }
 
@@ -1400,15 +1447,14 @@
             if (viewMode === mode && !forceRender) return;
 
             viewMode = mode;
-            const btnSingle = document.getElementById('btnViewSingle');
-            const btnContinuous = document.getElementById('btnViewContinuous');
-
-            // 如果原本沒有這些按鈕在 DOM，我們先建立它們或是直接處理畫面
-            document.getElementById('pdfViewer').innerHTML = '';
-            if (mode === 'single') {
-                renderPage(currentPageNum);
-            } else {
-                renderAllPages();
+            const pdfViewer = document.getElementById('pdfViewer');
+            if (pdfViewer) {
+                pdfViewer.innerHTML = '';
+                if (mode === 'single') {
+                    renderPage(currentPageNum);
+                } else {
+                    renderAllPages();
+                }
             }
             resetDrawingCanvasSize();
         }
@@ -1417,78 +1463,82 @@
             if (pageNum < 1 || pageNum > totalPages) return;
 
             const viewer = document.getElementById('pdfViewer');
-            viewer.innerHTML = ''; 
+            if (viewer) {
+                viewer.innerHTML = ''; 
 
-            const pageContainer = document.createElement('div');
-            pageContainer.className = 'relative pdf-canvas-container';
-            pageContainer.id = `page-container-${pageNum}`;
-            viewer.appendChild(pageContainer);
+                const pageContainer = document.createElement('div');
+                pageContainer.className = 'relative pdf-canvas-container';
+                pageContainer.id = `page-container-${pageNum}`;
+                viewer.appendChild(pageContainer);
 
-            const canvas = document.createElement('canvas');
-            canvas.id = `canvas-page-${pageNum}`;
-            pageContainer.appendChild(canvas);
+                const canvas = document.createElement('canvas');
+                canvas.id = `canvas-page-${pageNum}`;
+                pageContainer.appendChild(canvas);
 
-            if (isSampleMode) {
-                currentZoom = 1.0;
-                updateZoomText();
-                drawSampleSlideOnCanvas(pageNum, canvas, 1.25);
-            } else {
-                try {
-                    const page = await pdfDoc.getPage(pageNum);
-                    const calculatedScale = getFitScale(page);
-                    currentZoom = calculatedScale;
+                if (isSampleMode) {
+                    currentZoom = 1.0;
                     updateZoomText();
+                    drawSampleSlideOnCanvas(pageNum, canvas, 1.25);
+                } else {
+                    try {
+                        const page = await pdfDoc.getPage(pageNum);
+                        const calculatedScale = getFitScale(page);
+                        currentZoom = calculatedScale;
+                        updateZoomText();
 
-                    const viewport = page.getViewport({ scale: currentZoom });
-                    const context = canvas.getContext('2d');
-                    canvas.height = viewport.height;
-                    canvas.width = viewport.width;
+                        const viewport = page.getViewport({ scale: currentZoom });
+                        const context = canvas.getContext('2d');
+                        canvas.height = viewport.height;
+                        canvas.width = viewport.width;
 
-                    await page.render({
-                        canvasContext: context,
-                        viewport: viewport
-                    }).promise;
-                } catch (e) {
-                    console.warn('渲染失敗', e);
+                        await page.render({
+                            canvasContext: context,
+                            viewport: viewport
+                        }).promise;
+                    } catch (e) {
+                        console.warn('渲染失敗', e);
+                    }
                 }
+
+                currentPageNum = pageNum;
+                document.getElementById('pageNumberInput').value = pageNum;
+                document.getElementById('floatingCurrentPage').innerText = pageNum;
+                updateActiveThumbnail();
+
+                setTimeout(resetDrawingCanvasSize, 80);
             }
-
-            currentPageNum = pageNum;
-            document.getElementById('pageNumberInput').value = pageNum;
-            document.getElementById('floatingCurrentPage').innerText = pageNum;
-            updateActiveThumbnail();
-
-            setTimeout(resetDrawingCanvasSize, 80);
         }
 
         async function renderAllPages() {
             const viewer = document.getElementById('pdfViewer');
-            viewer.innerHTML = '';
+            if (viewer) {
+                viewer.innerHTML = '';
 
-            for (let i = 1; i <= totalPages; i++) {
-                const pageContainer = document.createElement('div');
-                pageContainer.className = 'relative pdf-canvas-container';
-                pageContainer.id = `page-container-${i}`;
-                pageContainer.setAttribute('data-page-number', i);
-                viewer.appendChild(pageContainer);
+                for (let i = 1; i <= totalPages; i++) {
+                    const pageContainer = document.createElement('div');
+                    pageContainer.className = 'relative pdf-canvas-container';
+                    pageContainer.id = `page-container-${i}`;
+                    pageContainer.setAttribute('data-page-number', i);
+                    viewer.appendChild(pageContainer);
 
-                const canvas = document.createElement('canvas');
-                canvas.id = `canvas-page-${i}`;
-                pageContainer.appendChild(canvas);
+                    const canvas = document.createElement('canvas');
+                    canvas.id = `canvas-page-${i}`;
+                    pageContainer.appendChild(canvas);
 
-                if (isSampleMode) {
-                    drawSampleSlideOnCanvas(i, canvas, 1.0);
-                } else {
-                    await renderPageInContinuous(i, canvas);
+                    if (isSampleMode) {
+                        drawSampleSlideOnCanvas(i, canvas, 1.0);
+                    } else {
+                        await renderPageInContinuous(i, canvas);
+                    }
                 }
-            }
 
-            currentPageNum = 1;
-            document.getElementById('pageNumberInput').value = 1;
-            document.getElementById('floatingCurrentPage').innerText = 1;
-            updateActiveThumbnail();
-            
-            setTimeout(resetDrawingCanvasSize, 120);
+                currentPageNum = 1;
+                document.getElementById('pageNumberInput').value = 1;
+                document.getElementById('floatingCurrentPage').innerText = 1;
+                updateActiveThumbnail();
+                
+                setTimeout(resetDrawingCanvasSize, 120);
+            }
         }
 
         async function renderPageInContinuous(pageNum, canvas) {
@@ -1511,22 +1561,25 @@
 
         function getFitScale(page) {
             const container = document.getElementById('viewerScrollContainer');
-            const padding = 32; 
-            const containerWidth = container.clientWidth - padding;
-            const containerHeight = container.clientHeight - padding;
-            const viewport = page.getViewport({ scale: 1.0 });
-            
-            if (zoomMode === 'page-fit') {
-                const scaleX = containerWidth / viewport.width;
-                const scaleY = containerHeight / viewport.height;
-                return Math.min(scaleX, scaleY);
-            } else if (zoomMode === 'page-width') {
-                return containerWidth / viewport.width;
-            } else {
-                const scaleX = containerWidth / viewport.width;
-                const scaleY = containerHeight / viewport.height;
-                return Math.min(scaleX, scaleY);
+            if (container) {
+                const padding = 32; 
+                const containerWidth = container.clientWidth - padding;
+                const containerHeight = container.clientHeight - padding;
+                const viewport = page.getViewport({ scale: 1.0 });
+                
+                if (zoomMode === 'page-fit') {
+                    const scaleX = containerWidth / viewport.width;
+                    const scaleY = containerHeight / viewport.height;
+                    return Math.min(scaleX, scaleY);
+                } else if (zoomMode === 'page-width') {
+                    return containerWidth / viewport.width;
+                } else {
+                    const scaleX = containerWidth / viewport.width;
+                    const scaleY = containerHeight / viewport.height;
+                    return Math.min(scaleX, scaleY);
+                }
             }
+            return 1.0;
         }
 
         function handleContainerScroll() {
@@ -1534,25 +1587,27 @@
             const container = document.getElementById('viewerScrollContainer');
             const containers = document.querySelectorAll('.pdf-canvas-container');
             
-            let currentVisiblePage = 1;
-            let minDistance = Infinity;
+            if (container) {
+                let currentVisiblePage = 1;
+                let minDistance = Infinity;
 
-            containers.forEach(elem => {
-                const rect = elem.getBoundingClientRect();
-                const containerRect = container.getBoundingClientRect();
-                const distance = Math.abs((rect.top + rect.height/2) - (containerRect.top + containerRect.height/2));
-                if (distance < minDistance) {
-                    minDistance = distance;
-                    currentVisiblePage = parseInt(elem.getAttribute('data-page-number'));
+                containers.forEach(elem => {
+                    const rect = elem.getBoundingClientRect();
+                    const containerRect = container.getBoundingClientRect();
+                    const distance = Math.abs((rect.top + rect.height/2) - (containerRect.top + containerRect.height/2));
+                    if (distance < minDistance) {
+                        minDistance = distance;
+                        currentVisiblePage = parseInt(elem.getAttribute('data-page-number'));
+                    }
+                });
+
+                if (currentPageNum !== currentVisiblePage) {
+                    currentPageNum = currentVisiblePage;
+                    document.getElementById('pageNumberInput').value = currentPageNum;
+                    document.getElementById('floatingCurrentPage').innerText = currentPageNum;
+                    updateActiveThumbnail();
+                    resetDrawingCanvasSize(); 
                 }
-            });
-
-            if (currentPageNum !== currentVisiblePage) {
-                currentPageNum = currentVisiblePage;
-                document.getElementById('pageNumberInput').value = currentPageNum;
-                document.getElementById('floatingCurrentPage').innerText = currentPageNum;
-                updateActiveThumbnail();
-                resetDrawingCanvasSize(); 
             }
         }
 
@@ -1585,11 +1640,13 @@
 
         function goToPageFromInput() {
             const input = document.getElementById('pageNumberInput');
-            let val = parseInt(input.value);
-            if (isNaN(val)) return;
-            if (val < 1) val = 1;
-            if (val > totalPages) val = totalPages;
-            goToPage(val);
+            if (input) {
+                let val = parseInt(input.value);
+                if (isNaN(val)) return;
+                if (val < 1) val = 1;
+                if (val > totalPages) val = totalPages;
+                goToPage(val);
+            }
         }
 
         // ==================== 縮放控制 ====================
@@ -1600,6 +1657,7 @@
             applyZoomChange();
         }
 
+        // 縮小
         function zoomOut() {
             if (!fileLoaded) return;
             zoomMode = 'custom';
@@ -1608,7 +1666,8 @@
         }
 
         function applyZoomChange() {
-            document.getElementById('zoomPresetSelect').value = 'custom';
+            const select = document.getElementById('zoomPresetSelect');
+            if (select) select.value = 'custom';
             setViewMode(viewMode, true); 
             updateZoomText();
         }
@@ -1625,7 +1684,8 @@
         }
 
         function updateZoomText() {
-            document.getElementById('zoomPercentText').innerText = `${Math.round(currentZoom * 100)}%`;
+            const txt = document.getElementById('zoomPercentText');
+            if (txt) txt.innerText = `${Math.round(currentZoom * 100)}%`;
         }
 
         function handleResize() {
@@ -1708,12 +1768,14 @@
 
         function toggleFullscreen() {
             const mainArea = document.getElementById('presentationViewport');
-            if (!document.fullscreenElement && !document.webkitFullscreenElement) {
-                if (mainArea.requestFullscreen) mainArea.requestFullscreen();
-                else if (mainArea.webkitRequestFullscreen) mainArea.webkitRequestFullscreen();
-            } else {
-                if (document.exitFullscreen) document.exitFullscreen();
-                else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+            if (mainArea) {
+                if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+                    if (mainArea.requestFullscreen) mainArea.requestFullscreen();
+                    else if (mainArea.webkitRequestFullscreen) mainArea.webkitRequestFullscreen();
+                } else {
+                    if (document.exitFullscreen) document.exitFullscreen();
+                    else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+                }
             }
         }
 
@@ -1725,15 +1787,17 @@
 
             if (isFs) {
                 if (topNavbar) topNavbar.classList.add('hidden');
-                editorTopBar.classList.add('opacity-0');
-                controlBar.classList.add('bg-[#0f111a]/20', 'border-t-0');
+                if (editorTopBar) editorTopBar.classList.add('opacity-0');
+                if (controlBar) controlBar.classList.add('bg-[#0f111a]/20', 'border-t-0');
                 enableIdleUIHider();
                 showNotice('進入全螢幕簡報 (按 ESC 退出)');
             } else {
                 if (topNavbar) topNavbar.classList.remove('hidden');
-                editorTopBar.classList.remove('opacity-0');
-                controlBar.classList.remove('bg-[#0f111a]/20', 'border-t-0');
-                controlBar.classList.remove('translate-y-full');
+                if (editorTopBar) editorTopBar.classList.remove('opacity-0');
+                if (controlBar) {
+                    controlBar.classList.remove('bg-[#0f111a]/20', 'border-t-0');
+                    controlBar.classList.remove('translate-y-full');
+                }
                 disableIdleUIHider();
             }
 
@@ -1742,12 +1806,14 @@
 
         function toggleSidebar() {
             const sidebar = document.getElementById('sidebar');
-            if (sidebar.classList.contains('-translate-x-full')) {
-                sidebar.classList.remove('-translate-x-full');
-                sidebar.classList.add('translate-x-0');
-            } else {
-                sidebar.classList.remove('translate-x-0');
-                sidebar.classList.add('-translate-x-full');
+            if (sidebar) {
+                if (sidebar.classList.contains('-translate-x-full')) {
+                    sidebar.classList.remove('-translate-x-full');
+                    sidebar.classList.add('translate-x-0');
+                } else {
+                    sidebar.classList.remove('translate-x-0');
+                    sidebar.classList.add('-translate-x-full');
+                }
             }
             setTimeout(handleResize, 350); 
         }
@@ -1760,15 +1826,15 @@
             document.addEventListener('mousemove', showUIOnMouseMove);
             
             function showUIOnMouseMove() {
-                controlBar.classList.remove('translate-y-full', 'opacity-0');
-                floatingIndicator.classList.remove('opacity-0');
+                if (controlBar) controlBar.classList.remove('translate-y-full', 'opacity-0');
+                if (floatingIndicator) floatingIndicator.classList.remove('opacity-0');
                 document.body.style.cursor = interactionTool === 'laser' ? 'none' : 'default';
 
                 clearTimeout(controlHideTimeout);
                 controlHideTimeout = setTimeout(() => {
                     if (document.fullscreenElement || document.webkitFullscreenElement) {
-                        controlBar.classList.add('translate-y-full', 'opacity-0');
-                        floatingIndicator.classList.add('opacity-0');
+                        if (controlBar) controlBar.classList.add('translate-y-full', 'opacity-0');
+                        if (floatingIndicator) floatingIndicator.classList.add('opacity-0');
                         if (interactionTool !== 'laser') {
                             document.body.style.cursor = 'none';
                         }
@@ -1787,35 +1853,40 @@
             const controlBar = document.getElementById('controlBar');
             const floatingIndicator = document.getElementById('pageIndicatorFloating');
             
-            controlBar.classList.remove('translate-y-full', 'opacity-0');
-            floatingIndicator.classList.remove('opacity-0');
+            if (controlBar) controlBar.classList.remove('translate-y-full', 'opacity-0');
+            if (floatingIndicator) floatingIndicator.classList.add('opacity-0');
         }
 
         // ==================== 互動畫筆與虛擬雷射筆 ====================
         function setInteractionTool(tool) {
             interactionTool = tool;
 
-            document.getElementById('toolCursor').className = "p-2 rounded-lg text-slate-400 hover:text-white transition flex items-center justify-center";
-            document.getElementById('toolLaser').className = "p-2 rounded-lg text-slate-400 hover:text-white transition flex items-center justify-center";
-            document.getElementById('toolPen').className = "p-2 rounded-lg text-slate-400 hover:text-white transition flex items-center justify-center";
-            document.getElementById('penOptions').classList.add('hidden');
+            const cursorBtn = document.getElementById('toolCursor');
+            const laserBtn = document.getElementById('toolLaser');
+            const penBtn = document.getElementById('toolPen');
+            const penOpts = document.getElementById('penOptions');
+
+            if (cursorBtn) cursorBtn.className = "p-2 rounded-lg text-slate-400 hover:text-white transition flex items-center justify-center";
+            if (laserBtn) laserBtn.className = "p-2 rounded-lg text-slate-400 hover:text-white transition flex items-center justify-center";
+            if (penBtn) penBtn.className = "p-2 rounded-lg text-slate-400 hover:text-white transition flex items-center justify-center";
+            if (penOpts) penOpts.classList.add('hidden');
 
             drawingCanvas.className = ''; 
 
             if (tool === 'cursor') {
-                document.getElementById('toolCursor').classList.add('bg-slate-800', 'text-orange-500');
+                if (cursorBtn) cursorBtn.classList.add('bg-slate-800', 'text-orange-500');
                 document.body.style.cursor = 'default';
-                laserPointer.style.display = 'none';
+                if (laserPointer) laserPointer.style.display = 'none';
             } else if (tool === 'laser') {
-                document.getElementById('toolLaser').classList.add('bg-slate-800', 'text-orange-500');
+                if (laserBtn) laserBtn.classList.add('bg-slate-800', 'text-orange-500');
                 drawingCanvas.classList.add('active-laser');
                 document.body.style.cursor = 'none'; 
             } else if (tool === 'pen') {
-                document.getElementById('toolPen').classList.add('bg-slate-800', 'text-orange-500');
-                document.getElementById('penOptions').classList.remove('hidden');
+                if (penBtn) penBtn.classList.add('bg-slate-800', 'text-orange-500');
+                if (penOpts) penOpts.classList.remove('hidden');
                 drawingCanvas.classList.add('active-draw');
                 document.body.style.cursor = 'crosshair';
-                laserPointer.style.display = 'none';
+                if (laserPointer) laserPointer.style.display = 'none';
             }
         }
 
@@ -1897,7 +1968,7 @@
             const x = e.clientX - rect.left;
             const y = e.clientY - rect.top;
 
-            if (interactionTool === 'laser') {
+            if (interactionTool === 'laser' && laserPointer) {
                 laserPointer.style.display = 'block';
                 laserPointer.style.top = `${e.clientY}px`;
                 laserPointer.style.left = `${e.clientX}px`;
@@ -2003,9 +2074,11 @@
         function saveToLocalStorage() {
             if (!fileLoaded) return;
             try {
+                const nameSpan = document.getElementById('fileName');
+                const displayTitle = nameSpan ? nameSpan.innerText : "未命名簡報";
                 const localData = {
                     fileHash: currentFileHash,
-                    fileName: document.getElementById('fileName').innerText,
+                    fileName: displayTitle,
                     lastPage: currentPageNum,
                     viewMode: viewMode,
                     zoomMode: zoomMode,
@@ -2072,23 +2145,26 @@
         }
 
         function toggleHelpModal() {
-            document.getElementById('helpModal').classList.toggle('hidden');
+            const helpModal = document.getElementById('helpModal');
+            if (helpModal) helpModal.classList.toggle('hidden');
         }
 
         function showNotice(text) {
             const toast = document.getElementById('quickToast');
-            toast.innerHTML = `<i class="w-4 h-4 text-orange-500" data-lucide="info"></i><span>${text}</span>`;
-            lucide.createIcons();
+            if (toast) {
+                toast.innerHTML = `<i class="w-4 h-4 text-orange-500" data-lucide="info"></i><span>${text}</span>`;
+                lucide.createIcons();
 
-            toast.classList.remove('translate-y-10', 'opacity-0');
-            if (window.toastTimeout) clearTimeout(window.toastTimeout);
-            window.toastTimeout = setTimeout(() => {
-                toast.classList.add('translate-y-10', 'opacity-0');
-            }, 5500); 
+                toast.classList.remove('translate-y-10', 'opacity-0');
+                if (window.toastTimeout) clearTimeout(window.toastTimeout);
+                window.toastTimeout = setTimeout(() => {
+                    toast.classList.add('translate-y-10', 'opacity-0');
+                }, 5500); 
+            }
         }
 
         drawingCanvas.addEventListener('mouseleave', () => {
-            laserPointer.style.display = 'none';
+            if (laserPointer) laserPointer.style.display = 'none';
         });
     </script>
 </body>
