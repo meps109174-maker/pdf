@@ -942,11 +942,16 @@
             try {
                 if (currentAuthMode === 'login') {
                     await auth.signInWithEmailAndPassword(email, password);
-                    showNotice('登入成功！已成功連線至雲端。');
                 } else {
                     await auth.createUserWithEmailAndPassword(email, password);
-                    showNotice('帳號註冊成功！歡迎使用。');
                 }
+                
+                // 智慧修正點：登入成功後，主動設定當前帳號狀態，並一鍵強制刷新 UI 畫面！
+                currentUser = auth.currentUser;
+                isCloudConnected = true;
+                updateAuthUI();
+                
+                showNotice('🎉 登入成功！已成功連線至雲端個人儲存庫。');
                 document.getElementById('userModal').classList.add('hidden');
             } catch (error) {
                 console.warn("Auth Error details:", error);
@@ -972,10 +977,13 @@
                     await auth.signOut();
                     await auth.signInAnonymously();
                 }
-                showNotice('您已登出線上帳號。');
+                currentUser = null;
+                isCloudConnected = false;
+                showNotice('您已登出線上帳號，已自動轉換至離線本機模式。');
                 document.getElementById('userModal').classList.add('hidden');
                 drawingsByPage = {};
                 if (fileLoaded) setViewMode(viewMode, true);
+                updateAuthUI();
             } catch (error) {
                 showNotice('登出失敗。');
             }
@@ -994,10 +1002,10 @@
             const startUserSubtitle = document.getElementById('startUserSubtitle');
             const startUserAvatar = document.getElementById('startUserAvatar');
 
-            // 預設與未建立雲端連線狀態：無聲離線模式
+            // 1. 如果完全沒連上雲端，或是離線狀態：本機小綠盾離線優先模式
             if (!isCloudConnected) {
                 if (btnCloudSync) btnCloudSync.classList.add('hidden');
-                if (userMenuText) userMenuText.innerText = '本機暫存';
+                if (userMenuText) userMenuText.innerText = '離線模式';
                 if (userMenuIcon) {
                     userMenuIcon.setAttribute('data-lucide', 'shield-check');
                     userMenuIcon.className = "w-4 h-4 text-emerald-400";
@@ -1019,8 +1027,8 @@
                 return;
             }
 
-            // 雲端帳密連線成功
-            if (auth && currentUser && !currentUser.isAnonymous && currentUser.email) {
+            // 2. 如果已成功登入正式帳密會員 (非匿名訪客)
+            if (currentUser && !currentUser.isAnonymous && currentUser.email) {
                 if (btnCloudSync) btnCloudSync.classList.remove('hidden');
                 if (userMenuText) userMenuText.innerText = currentUser.email.split('@')[0];
                 if (userMenuIcon) {
@@ -1042,7 +1050,9 @@
                     startUserAvatar.setAttribute('data-lucide', 'user-check');
                     startUserAvatar.className = "w-5 h-5 text-green-400";
                 }
-            } else {
+            } 
+            // 3. 雖然連線上 Firebase，但僅是匿名訪客模式 (未登入信箱)
+            else {
                 if (btnCloudSync) btnCloudSync.classList.add('hidden');
                 if (userMenuText) userMenuText.innerText = '訪客模式';
                 if (userMenuIcon) {
@@ -1053,14 +1063,14 @@
                 if (authContainer) authContainer.classList.remove('hidden');
                 if (userProfileContainer) userProfileContainer.classList.add('hidden');
 
-                if (startUserTitle) startUserTitle.innerText = '本機儲存模式';
+                if (startUserTitle) startUserTitle.innerText = '訪客遊客';
                 if (startUserSubtitle) {
-                    startUserSubtitle.innerText = '離線可用，自動暫存';
-                    startUserSubtitle.className = "text-[10px] text-emerald-400 font-semibold truncate";
+                    startUserSubtitle.innerText = '僅本機暫存模式';
+                    startUserSubtitle.className = "text-[10px] text-slate-400 font-semibold truncate";
                 }
                 if (startUserAvatar) {
-                    startUserAvatar.setAttribute('data-lucide', 'shield-check');
-                    startUserAvatar.className = "w-5 h-5 text-emerald-400";
+                    startUserAvatar.setAttribute('data-lucide', 'user');
+                    startUserAvatar.className = "w-5 h-5 text-slate-400";
                 }
             }
             lucide.createIcons();
@@ -1401,8 +1411,6 @@
                     const label = document.createElement('span');
                     label.className = 'text-[10px] mt-1.5 text-slate-400 font-bold';
                     label.innerText = `投影片 ${i}`;
-                    thumbWrapper.appendChild(label);
-
                     container.appendChild(thumbWrapper);
                     renderSingleThumbnail(i, canvas);
                 }
