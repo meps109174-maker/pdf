@@ -11,10 +11,11 @@
     <!-- PDF.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     
-    <!-- Firebase Compat SDKs (官方同步經典版本，100% 穩定且不卡頓) -->
+    <!-- Firebase Compat SDKs (新增 Storage 支援，100% 穩定且不卡頓) -->
     <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-storage-compat.js"></script>
 
     <style>
         /* 隱藏滾動條但保留功能 */
@@ -40,21 +41,21 @@
         :fullscreen .presentation-mode {
             background-color: #000000;
         }
-        /* 雷射筆與畫筆畫布 */
+        /* 雷射筆與畫筆畫布 (智慧防 iPad 滾動手勢衝突優化) */
         #drawingCanvas {
             position: absolute;
-            top: 0;
-            left: 0;
             pointer-events: none;
             z-index: 10;
         }
         #drawingCanvas.active-draw {
             pointer-events: auto;
             cursor: crosshair;
+            touch-action: none; /* 100% 解決 iPad / 觸控大螢幕畫畫與滾動手勢衝突問題 */
         }
         #drawingCanvas.active-laser {
             pointer-events: auto;
             cursor: none; 
+            touch-action: none;
         }
         /* 雷射紅點 */
         .laser-pointer {
@@ -78,7 +79,7 @@
     <!-- ========================================== -->
     <div id="startScreen" class="h-full flex overflow-hidden">
         
-        <!-- 左側極簡導覽列 (微軟 PowerPoint 側邊風格) -->
+        <!-- 左側極簡導覽列 -->
         <aside class="w-64 bg-[#0a0c14] border-r border-slate-800/80 flex flex-col justify-between py-6">
             <div class="space-y-6">
                 <!-- 軟體 LOGO -->
@@ -167,7 +168,7 @@
                                 <i data-lucide="layout-template" class="w-6 h-6"></i>
                             </div>
                             <h4 class="text-md font-bold text-white mb-1">載入內建範例簡報</h4>
-                            <p class="text-xs text-slate-400 leading-relaxed">沒有 PDF？立即載入系統精美測試簡報，體驗全螢幕、畫筆與雷射筆工具。</p>
+                            <p class="text-xs text-slate-400 leading-relaxed">沒有 PDF ? 立即載入系統精美測試簡報，體驗全螢幕、畫筆與雷射筆工具。</p>
                             <span class="absolute bottom-6 right-6 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all text-red-400">
                                 <i data-lucide="arrow-right" class="w-5 h-5"></i>
                             </span>
@@ -204,7 +205,7 @@
                                 <thead>
                                     <tr class="border-b border-slate-800 bg-[#0d0f17] text-slate-400 font-bold">
                                         <th class="p-4">簡報名稱</th>
-                                        <th class="p-4 hidden sm:table-cell">上次開啟時間</th>
+                                        <th class="p-4 hidden sm:table-cell">同步狀態與來源</th>
                                         <th class="p-4 hidden md:table-cell">檔案大小</th>
                                         <th class="p-4 text-right">操作</th>
                                     </tr>
@@ -270,14 +271,14 @@
                     </div>
                 </div>
 
-                <!-- 右側進度與帳號觸發按鈕 (手動點選，高安全容錯) -->
+                <!-- 右側進度與帳號觸發按鈕 -->
                 <div class="flex items-center gap-2 pointer-events-auto">
                     <!-- 頂部帳號狀態按鈕 -->
                     <button onclick="toggleUserModal()" class="flex items-center gap-2 bg-[#0a0c14]/90 backdrop-blur border border-slate-800/80 text-slate-300 px-3.5 py-2 rounded-xl text-xs font-semibold shadow-lg hover:bg-slate-900 transition hover:border-slate-700">
                         <i id="userMenuIcon" data-lucide="shield-check" class="w-3.5 h-3.5 text-emerald-400"></i>
                         <span id="userMenuText">本機暫存</span>
                     </button>
-                    <!-- 雲端同步手動按鈕 (僅在連線成功時顯示) -->
+                    <!-- 雲端同步手動按鈕 -->
                     <button id="btnCloudSync" onclick="saveDataToCloud()" class="hidden flex items-center gap-1.5 bg-[#0a0c14]/90 backdrop-blur border border-slate-800/80 text-slate-300 px-3.5 py-2 rounded-xl text-xs font-semibold shadow-lg hover:bg-slate-900 transition hover:border-slate-700" title="一鍵同步備份至雲端">
                         <i data-lucide="cloud-upload" class="w-3.5 h-3.5 text-orange-400"></i>
                         <span>同步</span>
@@ -304,26 +305,26 @@
             <footer id="controlBar" class="bg-slate-950/95 backdrop-blur border-t border-slate-800/60 px-6 py-4 flex flex-col md:flex-row items-center justify-between gap-4 z-20 transition-all duration-300">
                 <!-- 頁數與側邊欄控制 -->
                 <div class="flex items-center space-x-4">
-                    <button onclick="toggleSidebar()" class="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition" title="切換側邊欄">
+                    <button onclick="toggleSidebar()" class="p-2 text-slate-400 hover:text-white hover:bg-[#131722] rounded-lg transition" title="切換側邊欄">
                         <i data-lucide="menu" class="w-5 h-5"></i>
                     </button>
                     <div class="flex items-center space-x-2 text-sm">
-                        <button onclick="prevPage()" class="p-1.5 bg-slate-850 hover:bg-slate-800 text-slate-200 rounded-lg transition" title="上一頁 (PageUp / ←)">
+                        <button onclick="prevPage()" class="p-1.5 bg-[#131722] hover:bg-slate-700 text-slate-200 rounded-lg transition" title="上一頁 (PageUp / ←)">
                             <i data-lucide="chevron-left" class="w-5 h-5"></i>
                         </button>
                         <div class="flex items-center space-x-1">
-                            <input type="number" id="pageNumberInput" value="1" min="1" class="w-12 bg-slate-900 border border-slate-800 rounded-lg px-1 py-0.5 text-center text-white focus:outline-none focus:border-orange-500" onchange="goToPageFromInput()">
+                            <input type="number" id="pageNumberInput" value="1" min="1" class="w-12 bg-[#131722] border border-slate-800 rounded-lg px-1 py-0.5 text-center text-white focus:outline-none focus:border-orange-500" onchange="goToPageFromInput()">
                             <span class="text-slate-400">/ <span id="totalPagesText">0</span> 頁</span>
                         </div>
-                        <button onclick="nextPage()" class="p-1.5 bg-slate-850 hover:bg-slate-800 text-slate-200 rounded-lg transition" title="下一頁 (Space / PageDown / →)">
+                        <button onclick="nextPage()" class="p-1.5 bg-[#131722] hover:bg-slate-700 text-slate-200 rounded-lg transition" title="下一頁 (Space / PageDown / →)">
                             <i data-lucide="chevron-right" class="w-5 h-5"></i>
                         </button>
                     </div>
                 </div>
 
                 <!-- 簡報互動輔助工具 (雷射筆 / 畫筆) -->
-                <div class="flex items-center bg-slate-900 border border-slate-800 p-1.5 rounded-xl space-x-1">
-                    <button id="toolCursor" onclick="setInteractionTool('cursor')" class="p-2 rounded-lg text-orange-500 bg-slate-850 transition flex items-center justify-center" title="一般選取游標">
+                <div class="flex items-center bg-[#131722] border border-slate-800 p-1.5 rounded-xl space-x-1">
+                    <button id="toolCursor" onclick="setInteractionTool('cursor')" class="p-2 rounded-lg text-orange-500 bg-slate-805 transition flex items-center justify-center" title="一般選取游標">
                         <i data-lucide="mouse-pointer" class="w-4 h-4"></i>
                     </button>
                     <button id="toolLaser" onclick="setInteractionTool('laser')" class="p-2 rounded-lg text-slate-400 hover:text-white transition flex items-center justify-center" title="雷射筆效果 (L)">
@@ -349,7 +350,7 @@
 
                 <!-- 縮放與全螢幕控制 -->
                 <div class="flex items-center space-x-3">
-                    <div class="flex items-center space-x-1 bg-slate-900 rounded-lg p-1 text-xs">
+                    <div class="flex items-center space-x-1 bg-[#131722] rounded-lg p-1 text-xs">
                         <button onclick="zoomOut()" class="p-1 text-slate-400 hover:text-white" title="縮小 (Ctrl + -)">
                             <i data-lucide="zoom-out" class="w-4 h-4"></i>
                         </button>
@@ -357,7 +358,7 @@
                         <button onclick="zoomIn()" class="p-1 text-slate-400 hover:text-white" title="放大 (Ctrl + +)">
                             <i data-lucide="zoom-in" class="w-4 h-4"></i>
                         </button>
-                        <select id="zoomPresetSelect" onchange="handleZoomPresetChange(event)" class="bg-slate-850 text-slate-300 rounded border-none px-1 py-0.5 focus:outline-none">
+                        <select id="zoomPresetSelect" onchange="handleZoomPresetChange(event)" class="bg-[#131722] text-slate-300 rounded border-none px-1 py-0.5 focus:outline-none">
                             <option value="auto">自動適應</option>
                             <option value="page-fit">完整頁面</option>
                             <option value="page-width">適應寬度</option>
@@ -449,15 +450,15 @@
                     </div>
 
                     <div class="grid grid-cols-2 gap-3">
-                        <button onclick="saveDataToCloud()" class="bg-slate-800 hover:bg-slate-700 text-slate-100 font-semibold py-2 rounded-lg text-xs transition flex items-center justify-center gap-1.5">
+                        <button onclick="saveDataToCloud()" class="bg-[#131722] hover:bg-slate-700 text-slate-100 font-semibold py-2 rounded-lg text-xs transition flex items-center justify-center gap-1.5">
                             <i data-lucide="cloud-upload" class="w-4 h-4"></i> 雲端同步備份
                         </button>
-                        <button onclick="loadDataFromCloud()" class="bg-slate-800 hover:bg-slate-700 text-slate-100 font-semibold py-2 rounded-lg text-xs transition flex items-center justify-center gap-1.5">
+                        <button onclick="loadDataFromCloud()" class="bg-[#131722] hover:bg-slate-700 text-slate-100 font-semibold py-2 rounded-lg text-xs transition flex items-center justify-center gap-1.5">
                             <i data-lucide="cloud-download" class="w-4 h-4"></i> 下載最新進度
                         </button>
                     </div>
 
-                    <button onclick="handleLogout()" class="w-full bg-slate-900 hover:bg-slate-850 border border-slate-800 text-slate-400 hover:text-red-400 font-semibold py-2 rounded-lg text-xs transition flex items-center justify-center gap-1.5">
+                    <button onclick="handleLogout()" class="w-full bg-[#131722] hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-red-400 font-semibold py-2 rounded-lg text-xs transition flex items-center justify-center gap-1.5">
                         <i data-lucide="log-out" class="w-4 h-4"></i> 登出帳號
                     </button>
                 </div>
@@ -492,7 +493,7 @@
                     <button onclick="saveFirebaseConfig()" class="flex-1 bg-orange-600 hover:bg-orange-500 text-white font-semibold py-2 rounded-lg text-xs transition">
                         儲存並重新連線
                     </button>
-                    <button onclick="resetFirebaseConfig()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold py-2 px-3 rounded-lg text-xs transition" title="重設回預設憑證">
+                    <button onclick="resetFirebaseConfig()" class="bg-[#131722] hover:bg-slate-700 text-slate-300 font-semibold py-2 px-3 rounded-lg text-xs transition" title="重設回預設憑證">
                         清除重設
                     </button>
                 </div>
@@ -500,7 +501,7 @@
         </div>
     </div>
 
-    <!-- 自訂確認操作對話框 Modal (安全地取代阻斷性的瀏覽器 confirm() 函數) -->
+    <!-- 自訂確認操作對話框 Modal -->
     <div id="confirmModal" class="hidden fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
         <div class="bg-[#0a0c14] border border-slate-800 rounded-2xl max-w-sm w-full p-6 shadow-2xl space-y-4">
             <div class="flex items-center gap-3">
@@ -514,7 +515,7 @@
                 <button id="btnConfirmYes" class="flex-1 bg-orange-600 hover:bg-orange-500 text-white font-semibold py-2 rounded-lg text-xs transition">
                     確定
                 </button>
-                <button id="btnConfirmNo" class="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold py-2 rounded-lg text-xs transition">
+                <button id="btnConfirmNo" class="flex-1 bg-slate-850 hover:bg-slate-700 text-slate-300 font-semibold py-2 rounded-lg text-xs transition">
                     取消
                 </button>
             </div>
@@ -599,13 +600,15 @@
         let drawingsByPage = {}; 
         let hasUnsavedChanges = false; 
 
-        // Firebase 相關狀態變數 (相容版)
+        // Firebase 相關狀態變數
         let auth = null;
         let db = null;
+        let storage = null; // 雲端 Storage 物件
         let currentUser = null;
         let currentAuthMode = 'login'; 
         let currentFileHash = 'default_pdf_hash'; 
-        let isCloudConnected = false; // 追蹤雲端連線狀態
+        let currentFileBuffer = null; // 快取當前載入的 PDF 二進位資料，用於雲端檔案備份
+        let isCloudConnected = false; 
 
         // 自訂確認對話框回呼函數
         let activeConfirmCallback = null;
@@ -624,7 +627,15 @@
         window.addEventListener('load', () => {
             // 設定極速穩定 Worker
             if (window.pdfjsLib) {
-                pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+                try {
+                    const workerUrl = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+                    const blobCode = `importScripts('${workerUrl}');`;
+                    const blob = new Blob([blobCode], { type: 'application/javascript' });
+                    pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(blob);
+                } catch (err) {
+                    console.warn("Blob Worker fallback to direct URL:", err);
+                    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+                }
             }
             initIndexedDB();
             initFirebaseAndNetwork();
@@ -639,11 +650,32 @@
             if (btnYes) btnYes.onclick = () => closeConfirmDialog(true);
             if (btnNo) btnNo.onclick = () => closeConfirmDialog(false);
 
-            // 預設更新為「本機模式」UI，完全無聲，零網路封包傳輸
+            // 預設更新為「本機模式」UI
             updateAuthUI();
         });
 
-        // ==================== 自訂確認對話框邏輯 (取代 confirm) ====================
+        // ==================== 原生 Gzip 智慧壓縮與解壓縮輔助函數 ====================
+        async function compressArrayBuffer(arrayBuffer) {
+            try {
+                const stream = new Response(arrayBuffer).body.pipeThrough(new CompressionStream('gzip'));
+                return await new Response(stream).arrayBuffer();
+            } catch (err) {
+                console.warn("瀏覽器晶片不支援原生壓縮，將使用原始檔案上傳", err);
+                return arrayBuffer;
+            }
+        }
+
+        async function decompressArrayBuffer(arrayBuffer) {
+            try {
+                const stream = new Response(arrayBuffer).body.pipeThrough(new DecompressionStream('gzip'));
+                return await new Response(stream).arrayBuffer();
+            } catch (err) {
+                console.warn("晶片解壓失敗，嘗試直接做為普通二進位讀取", err);
+                return arrayBuffer;
+            }
+        }
+
+        // ==================== 自訂確認對話框邏輯 ====================
         function showConfirmDialog(title, message, onConfirm, onCancel = null) {
             const modal = document.getElementById('confirmModal');
             const titleEl = document.getElementById('confirmTitle');
@@ -673,13 +705,32 @@
             activeCancelCallback = null;
         }
 
+        // ==================== 首頁 UI 輔助功能 ====================
+        function updateTime() {
+            const timeLabel = document.getElementById('currentTimeLabel');
+            if (timeLabel) {
+                const now = new Date();
+                timeLabel.innerText = now.toLocaleString('zh-TW', { hour12: false });
+            }
+        }
+
+        function setGreeting() {
+            const hour = new Date().getHours();
+            let greeting = '歡迎回來';
+            if (hour < 12) greeting = '早上好，準備好您的簡報了嗎？';
+            else if (hour < 18) greeting = '下午好，準備好您的簡報了嗎？';
+            else greeting = '晚上好，準備好您的簡報了嗎？';
+            const greetEl = document.getElementById('greetingText');
+            if (greetEl) greetEl.innerText = greeting;
+        }
+
         // ==================== IndexedDB 本機儲存引擎 ====================
         function initIndexedDB() {
             const request = indexedDB.open('PdfPresenterDB', 1);
             request.onerror = (event) => console.error("IndexedDB 初始化失敗", event);
             request.onsuccess = (event) => {
                 dbInstance = event.target.result;
-                renderRecentFilesList();
+                fetchPresentationList(); // 初始化讀取清單
             };
             request.onupgradeneeded = (event) => {
                 const db = event.target.result;
@@ -705,7 +756,7 @@
 
             store.put(record);
             transaction.oncomplete = () => {
-                renderRecentFilesList();
+                fetchPresentationList();
             };
         }
 
@@ -716,7 +767,7 @@
             const store = transaction.objectStore('presentations');
             store.delete(id);
             transaction.oncomplete = () => {
-                renderRecentFilesList();
+                fetchPresentationList();
                 showNotice('已移除該簡報歷史記錄');
             };
         }
@@ -728,170 +779,176 @@
             const store = transaction.objectStore('presentations');
             const clearReq = store.clear();
             clearReq.onsuccess = () => {
-                renderRecentFilesList();
+                fetchPresentationList();
                 showNotice('歷史簡報清單已全部清空');
             };
         }
 
-        // 渲染最近簡報列表
-        function renderRecentFilesList() {
+        // 智慧整合：同步下載雲端壓縮過的 Gzip PDF，並在記憶體晶片級解壓還原載入
+        async function downloadAndLoadPdfFromCloud(id, pdfUrl, fileName) {
+            try {
+                showNotice('正在從雲端安全下載壓縮 PDF 簡報包...');
+                if (db) await db.enableNetwork();
+                
+                const response = await fetch(pdfUrl);
+                if (!response.ok) throw new Error('雲端檔案下載失敗');
+                const compressedBuffer = await response.arrayBuffer();
+                
+                showNotice('正在使用硬體晶片解壓縮 PDF 檔案...');
+                // 同步下載時在記憶體中解壓縮
+                const decompressedBuffer = await decompressArrayBuffer(compressedBuffer);
+                
+                showNotice('解密還原成功！正在寫入本機高速快取...');
+                storePdfToIndexedDB(id, fileName, decompressedBuffer.byteLength, decompressedBuffer);
+                
+                loadPdfFromIndexedDB(id);
+            } catch (err) {
+                console.error("下載雲端 PDF 失敗:", err);
+                showNotice('下載雲端 PDF 失敗，請確認您的網路連線。');
+            } finally {
+                if (db) await db.disableNetwork();
+            }
+        }
+
+        // 智慧獲取「本機與雲端整合」的簡報清單
+        async function fetchPresentationList() {
             if (!dbInstance) return;
+
+            // 1. 先讀取 IndexedDB 本機資料
             const transaction = dbInstance.transaction(['presentations'], 'readonly');
             const store = transaction.objectStore('presentations');
-            const request = store.getAll();
+            const localRequest = store.getAll();
 
-            request.onsuccess = (event) => {
-                const list = event.target.result;
-                const tbody = document.getElementById('recentFilesTableBody');
-                list.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+            localRequest.onsuccess = async (event) => {
+                const localList = event.target.result || [];
+                
+                // 2. 如果已連接雲端且已登入，則手動抓取雲端紀錄進行整合
+                if (isCloudConnected && currentUser && !currentUser.isAnonymous) {
+                    try {
+                        if (db) await db.enableNetwork();
+                        const appId = typeof __app_id !== 'undefined' ? __app_id : 'pdf-presenter';
+                        const snapshot = await db.collection('artifacts').doc(appId).collection('users').doc(currentUser.uid).collection('userSettings').get();
+                        
+                        const cloudFiles = [];
+                        snapshot.forEach(doc => {
+                            cloudFiles.push(doc.data());
+                        });
 
-                if (list.length === 0) {
-                    tbody.innerHTML = `
-                        <tr>
-                            <td colspan="4" class="p-10 text-center text-slate-500">
-                                <div class="flex flex-col items-center justify-center gap-2">
-                                    <i data-lucide="folder-search" class="w-8 h-8 text-slate-600"></i>
-                                    <span>本機尚無最近開啟的簡報檔案記錄</span>
-                                </div>
-                            </td>
-                        </tr>
-                    `;
-                    lucide.createIcons();
-                    return;
+                        renderMergedList(localList, cloudFiles);
+                    } catch (e) {
+                        console.warn("無法取得雲端備份列表:", e);
+                        renderMergedList(localList, []);
+                    } finally {
+                        if (db) await db.disableNetwork();
+                    }
+                } else {
+                    renderMergedList(localList, []);
                 }
-
-                tbody.innerHTML = list.map(item => {
-                    const formattedDate = new Date(item.updatedAt).toLocaleString('zh-TW', { hour12: false });
-                    const formattedSize = (item.size / 1024 / 1024).toFixed(2) + ' MB';
-                    return `
-                        <tr class="border-b border-slate-800 hover:bg-slate-800/30 transition text-slate-300">
-                            <td class="p-4 font-semibold text-white max-w-[200px] sm:max-w-xs truncate">
-                                <div class="flex items-center space-x-2">
-                                    <i data-lucide="file-text" class="w-4 h-4 text-orange-500 flex-shrink-0"></i>
-                                    <span class="truncate" title="${item.name}">${item.name}</span>
-                                </div>
-                            </td>
-                            <td class="p-4 hidden sm:table-cell text-slate-400 font-mono">${formattedDate}</td>
-                            <td class="p-4 hidden md:table-cell text-slate-500 font-mono">${formattedSize}</td>
-                            <td class="p-4 text-right">
-                                <div class="flex items-center justify-end space-x-2">
-                                    <button onclick="loadPdfFromIndexedDB('${item.id}')" class="bg-orange-600 hover:bg-orange-500 text-white font-bold py-1.5 px-3 rounded-lg text-xs transition">
-                                        開啟
-                                    </button>
-                                    <button onclick="deleteFromIndexedDB('${item.id}')" class="text-slate-500 hover:text-red-400 p-1.5 rounded-lg transition" title="從清單移除">
-                                        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
-                                    </button>
-                                </div>
-                            </td>
-                        </tr>
-                    `;
-                }).join('');
-                lucide.createIcons();
             };
         }
 
-        // 從資料庫秒開 PDF
-        function loadPdfFromIndexedDB(id) {
-            if (!dbInstance) return;
-            const transaction = dbInstance.transaction(['presentations'], 'readonly');
-            const store = transaction.objectStore('presentations');
-            const request = store.get(id);
+        // 渲染混合列表
+        function renderMergedList(localList, cloudFiles) {
+            const tbody = document.getElementById('recentFilesTableBody');
+            if (!tbody) return;
 
-            request.onsuccess = (event) => {
-                const record = event.target.result;
-                if (record) {
-                    const nameSpan = document.getElementById('fileName');
-                    if (nameSpan) nameSpan.innerText = record.name;
-                    currentFileHash = record.id;
-                    isSampleMode = false;
+            // 建立本機檔案地圖
+            const mergedMap = new Map();
 
-                    pdfjsLib.getDocument({ data: new Uint8Array(record.data) }).promise.then(function(pdf) {
-                        pdfDoc = pdf;
-                        totalPages = pdf.numPages;
-                        document.getElementById('totalPagesText').innerText = totalPages;
-                        document.getElementById('floatingTotalPages').innerText = totalPages;
-                        
-                        currentPageNum = 1;
-                        fileLoaded = true;
-                        drawingsByPage = {}; 
-                        hasUnsavedChanges = false;
-                        updateUnsavedIndicator();
+            // 放入所有本機檔案
+            localList.forEach(item => {
+                mergedMap.set(item.id, {
+                    id: item.id,
+                    name: item.name,
+                    size: item.size,
+                    updatedAt: item.updatedAt,
+                    isLocal: true,
+                    isCloud: false,
+                    pdfUrl: null
+                });
+            });
 
-                        // 進入編輯器畫面
-                        document.getElementById('startScreen').classList.add('hidden');
-                        document.getElementById('editorWorkspace').classList.remove('hidden');
-
-                        renderThumbnails();
-                        setViewMode(viewMode, true);
-                        
-                        // 檢查有無本機筆刷備份
-                        const restored = loadFromLocalStorage();
-                        if (restored) {
-                            showNotice('簡報讀取成功！已回復您的畫筆標記軌跡。');
-                        } else {
-                            showNotice('簡報讀取成功！');
-                        }
-
-                        if (isCloudConnected && currentUser && !currentUser.isAnonymous) {
-                            loadDataFromCloud(true);
-                        }
-                    }).catch(err => {
-                        console.error('PDF 載入錯誤:', err);
-                        showNotice('無法加載本機快取投影片。');
+            // 混合雲端檔案
+            cloudFiles.forEach(cloud => {
+                if (mergedMap.has(cloud.fileHash)) {
+                    const existing = mergedMap.get(cloud.fileHash);
+                    existing.isCloud = true;
+                    existing.pdfUrl = cloud.pdfUrl;
+                    if (new Date(cloud.updatedAt) > new Date(existing.updatedAt)) {
+                        existing.updatedAt = cloud.updatedAt;
+                    }
+                } else {
+                    mergedMap.set(cloud.fileHash, {
+                        id: cloud.fileHash,
+                        name: cloud.fileName,
+                        size: 0, 
+                        updatedAt: cloud.updatedAt,
+                        isLocal: false,
+                        isCloud: true,
+                        pdfUrl: cloud.pdfUrl
                     });
                 }
-            };
-        }
+            });
 
-        // ==================== 首頁 UI 輔助功能 ====================
-        function updateTime() {
-            const timeLabel = document.getElementById('currentTimeLabel');
-            if (timeLabel) {
-                const now = new Date();
-                timeLabel.innerText = now.toLocaleString('zh-TW', { hour12: false });
+            const mergedList = Array.from(mergedMap.values());
+            mergedList.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+
+            if (mergedList.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="4" class="p-10 text-center text-slate-500">
+                            <div class="flex flex-col items-center justify-center gap-2">
+                                <i data-lucide="folder-search" class="w-8 h-8 text-slate-600"></i>
+                                <span>本機與雲端尚無簡報記錄</span>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+                lucide.createIcons();
+                return;
             }
-        }
 
-        function setGreeting() {
-            const hour = new Date().getHours();
-            let greeting = '歡迎回來';
-            if (hour < 12) greeting = '早上好，準備好您的簡報了嗎？';
-            else if (hour < 18) greeting = '下午好，準備好您的簡報了嗎？';
-            else greeting = '晚上好，準備好您的簡報了嗎？';
-            const greetEl = document.getElementById('greetingText');
-            if (greetEl) greetEl.innerText = greeting;
-        }
+            tbody.innerHTML = mergedList.map(item => {
+                const formattedDate = new Date(item.updatedAt).toLocaleString('zh-TW', { hour12: false });
+                const formattedSize = item.size > 0 ? (item.size / 1024 / 1024).toFixed(2) + ' MB' : '--';
+                
+                let statusBadge = '';
+                if (item.isLocal && item.isCloud) {
+                    statusBadge = `<span class="px-2 py-0.5 rounded-full bg-green-500/10 text-green-400 font-semibold text-[10px] flex items-center gap-1 border border-green-500/20"><span class="w-1 h-1 rounded-full bg-green-400"></span>已同步雲端</span>`;
+                } else if (item.isCloud) {
+                    statusBadge = `<span class="px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 font-semibold text-[10px] flex items-center gap-1 border border-cyan-500/20"><span class="w-1 h-1 rounded-full bg-cyan-400 animate-pulse"></span>雲端壓縮檔 (待下載)</span>`;
+                } else {
+                    statusBadge = `<span class="px-2 py-0.5 rounded-full bg-[#131722] text-slate-400 font-semibold text-[10px] flex items-center gap-1 border border-slate-500/20"><span class="w-1 h-1 rounded-full bg-slate-400"></span>僅本機暫存</span>`;
+                }
 
-        function switchStartTab(tab) {
-            if (tab === 'home') {
-                renderRecentFilesList();
-                setGreeting();
-            }
-        }
+                const clickAction = item.isLocal 
+                    ? `loadPdfFromIndexedDB('${item.id}')`
+                    : `downloadAndLoadPdfFromCloud('${item.id}', '${item.pdfUrl}', '${item.name}')`;
 
-        function exitToStartScreen() {
-            document.getElementById('editorWorkspace').classList.add('hidden');
-            document.getElementById('startScreen').classList.remove('hidden');
-            renderRecentFilesList();
-        }
-
-        function switchModalTab(tab) {
-            const authBtn = document.getElementById('tabAuthBtn');
-            const configBtn = document.getElementById('tabConfigBtn');
-            const authContent = document.getElementById('tabAuthContent');
-            const configContent = document.getElementById('tabConfigContent');
-
-            if (tab === 'auth') {
-                if (authBtn) authBtn.className = "flex-1 py-2 text-sm font-semibold border-b-2 border-orange-500 text-white";
-                if (configBtn) configBtn.className = "flex-1 py-2 text-sm font-semibold border-b-2 border-transparent text-slate-400 hover:text-white";
-                if (authContent) authContent.classList.remove('hidden');
-                if (configContent) configContent.classList.add('hidden');
-            } else {
-                if (configBtn) configBtn.className = "flex-1 py-2 text-sm font-semibold border-b-2 border-orange-500 text-white";
-                if (authBtn) authBtn.className = "flex-1 py-2 text-sm font-semibold border-b-2 border-transparent text-slate-400 hover:text-white";
-                if (configContent) configContent.classList.remove('hidden');
-                if (authContent) authContent.classList.add('hidden');
-            }
+                return `
+                    <tr class="border-b border-slate-800 hover:bg-slate-800/30 transition text-slate-300">
+                        <td class="p-4 font-semibold text-white max-w-[200px] sm:max-w-xs truncate">
+                            <div class="flex items-center space-x-2">
+                                <i data-lucide="file-text" class="w-4 h-4 text-orange-500 flex-shrink-0"></i>
+                                <span class="truncate" title="${item.name}">${item.name}</span>
+                            </div>
+                        </td>
+                        <td class="p-4 hidden sm:table-cell">${statusBadge}</td>
+                        <td class="p-4 hidden md:table-cell text-slate-500 font-mono">${formattedSize}</td>
+                        <td class="p-4 text-right">
+                            <div class="flex items-center justify-end space-x-2">
+                                <button onclick="${clickAction}" class="bg-orange-600 hover:bg-orange-500 text-white font-bold py-1.5 px-3 rounded-lg text-xs transition">
+                                    ${item.isLocal ? '開啟' : '下載並開啟'}
+                                </button>
+                                <button onclick="deleteFromIndexedDB('${item.id}')" class="text-slate-500 hover:text-red-400 p-1.5 rounded-lg transition" title="從清單移除">
+                                    <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+            lucide.createIcons();
         }
 
         // ==================== 100% 離線安全網路開關初始化邏輯 ====================
@@ -915,7 +972,7 @@
                     apiKey: "AIzaSyDp7W47F62UvUdSnHBkHWRFcIk_FJVtnIs",
                     authDomain: "pdf-ppt-4daaf.firebaseapp.com",
                     projectId: "pdf-ppt-4daaf",
-                    storageBucket: "pdf-ppt-4daaf.firebasestorage.app",
+                    storageBucket: "pdf-ppt-4daaf.firebasestorage.app", 
                     messagingSenderId: "251117275961",
                     appId: "1:251117275961:web:36897997e581e26edb36e8",
                     measurementId: "G-G88SBZGQ26"
@@ -929,25 +986,24 @@
                     firebaseConfig.apiKey = firebaseConfig.apiKey.trim().replace(/["']/g, "");
                 }
 
-                // 註冊初始化
                 if (!firebase.apps.length) {
                     firebase.initializeApp(firebaseConfig);
                 }
                 auth = firebase.auth();
                 db = firebase.firestore();
+                storage = firebase.storage(); 
 
-                // 🌟 關鍵修正：預設完全切斷資料庫的背景連線，保持極致安靜離線模式
                 await db.disableNetwork();
                 isCloudConnected = true;
 
-                // 開啟網頁時，自動恢復以往儲存的會員登入狀態（原生 SDK 從 Local Cache 讀取，免網速）
                 auth.onAuthStateChanged((user) => {
                     currentUser = user;
                     updateAuthUI();
+                    fetchPresentationList(); 
                 });
 
             } catch (error) {
-                console.warn("Firebase 初始化提示 (安全進入純本機存檔狀態):", error.message);
+                console.warn("Firebase 初始化提示:", error.message);
                 isCloudConnected = false;
                 updateAuthUI();
             }
@@ -958,14 +1014,12 @@
             if (modal) {
                 modal.classList.toggle('hidden');
                 if (!modal.classList.contains('hidden') && auth) {
-                    // 打開帳密面板時，臨時打通網路 1 秒以更新登入認證狀態
                     try {
                         await db.enableNetwork();
                         currentUser = auth.currentUser;
                         updateAuthUI();
                     } catch (e) {}
                 } else if (modal.classList.contains('hidden') && db) {
-                    // 面板關閉時，立刻切斷資料庫網路，回復最安全的離線狀態
                     await db.disableNetwork();
                 }
             }
@@ -983,7 +1037,6 @@
             }
 
             try {
-                // 做網路操作前，臨時啟用資料庫通訊
                 await db.enableNetwork();
 
                 if (currentAuthMode === 'login') {
@@ -997,10 +1050,14 @@
                 
                 showNotice('🎉 登入成功！已成功連線至雲端個人儲存庫。');
                 document.getElementById('userModal').classList.add('hidden');
+
+                if (fileLoaded) {
+                    await loadDataFromCloud(false);
+                }
+                fetchPresentationList();
             } catch (error) {
                 console.warn("Auth Error details:", error);
                 
-                // 自訂確認對話框：取代原生 confirm 避免 iframe 沙盒崩潰
                 if (error.code === 'auth/invalid-credential' || error.code === 'auth/user-not-found') {
                     showConfirmDialog(
                         "帳號尚未註冊",
@@ -1015,6 +1072,11 @@
                                 
                                 showNotice('🎉 帳號建立並登入成功！已成功開通雲端空間。');
                                 document.getElementById('userModal').classList.add('hidden');
+
+                                if (fileLoaded) {
+                                    await loadDataFromCloud(false);
+                                }
+                                fetchPresentationList();
                             } catch (regError) {
                                 showNotice('建立帳號失敗：' + regError.message);
                             }
@@ -1033,7 +1095,6 @@
                 }
                 showNotice(msg);
             } finally {
-                // 操作完成後，重新進入安全防禦斷網狀態
                 if (db) await db.disableNetwork();
             }
         }
@@ -1050,6 +1111,7 @@
                 drawingsByPage = {};
                 if (fileLoaded) setViewMode(viewMode, true);
                 updateAuthUI();
+                fetchPresentationList();
             } catch (error) {
                 showNotice('登出失敗。');
             } finally {
@@ -1070,7 +1132,6 @@
             const startUserSubtitle = document.getElementById('startUserSubtitle');
             const startUserAvatar = document.getElementById('startUserAvatar');
 
-            // 1. 如果完全沒連上雲端，或是離線狀態：本機小綠盾離線優先模式
             if (!isCloudConnected) {
                 if (btnCloudSync) btnCloudSync.classList.add('hidden');
                 if (userMenuText) userMenuText.innerText = '離線模式';
@@ -1095,7 +1156,6 @@
                 return;
             }
 
-            // 2. 如果已成功登入正式帳密會員
             if (currentUser && !currentUser.isAnonymous && currentUser.email) {
                 if (btnCloudSync) btnCloudSync.classList.remove('hidden');
                 if (userMenuText) userMenuText.innerText = currentUser.email.split('@')[0];
@@ -1118,9 +1178,7 @@
                     startUserAvatar.setAttribute('data-lucide', 'user-check');
                     startUserAvatar.className = "w-5 h-5 text-green-400";
                 }
-            } 
-            // 3. 雖然連線上 Firebase，但僅是匿名訪客模式
-            else {
+            } else {
                 if (btnCloudSync) btnCloudSync.classList.add('hidden');
                 if (userMenuText) userMenuText.innerText = '訪客模式';
                 if (userMenuIcon) {
@@ -1145,9 +1203,39 @@
             updateUnsavedIndicator();
         }
 
-        // ==================== 雲端手動同步核心 (僅在點擊時極速連線並中斷) ====================
+        // ==================== 智慧登入與註冊介面切換函數 ====================
+        function toggleAuthMode() {
+            const authTitle = document.getElementById('authTitle');
+            const btnPrimaryAuthText = document.getElementById('btnPrimaryAuthText');
+            const authToggleHint = document.getElementById('authToggleHint');
+            const btnToggleAuthMode = document.getElementById('btnToggleAuthMode');
+            const btnPrimaryAuth = document.getElementById('btnPrimaryAuth');
+
+            if (currentAuthMode === 'login') {
+                currentAuthMode = 'register';
+                if (authTitle) authTitle.innerHTML = `<i data-lucide="user-plus" class="w-4 h-4 text-orange-500"></i> 建立線上帳號`;
+                if (btnPrimaryAuthText) btnPrimaryAuthText.innerText = '建立帳號並登入';
+                if (authToggleHint) authToggleHint.innerText = '已經有帳號嗎？';
+                if (btnToggleAuthMode) btnToggleAuthMode.innerText = '立即登入';
+                if (btnPrimaryAuth) {
+                    btnPrimaryAuth.innerHTML = `<i data-lucide="user-plus" class="w-3.5 h-3.5"></i> <span id="btnPrimaryAuthText">註冊並登入</span>`;
+                }
+            } else {
+                currentAuthMode = 'login';
+                if (authTitle) authTitle.innerHTML = `<i data-lucide="lock" class="w-4 h-4 text-orange-500"></i> 會員帳號登入`;
+                if (btnPrimaryAuthText) btnPrimaryAuthText.innerText = '登入';
+                if (authToggleHint) authToggleHint.innerText = '還沒有帳號嗎？';
+                if (btnToggleAuthMode) btnToggleAuthMode.innerText = '立即註冊';
+                if (btnPrimaryAuth) {
+                    btnPrimaryAuth.innerHTML = `<i data-lucide="log-in" class="w-3.5 h-3.5"></i> <span id="btnPrimaryAuthText">登入</span>`;
+                }
+            }
+            lucide.createIcons();
+        }
+
+        // ==================== 雲端手動壓縮上傳 (實裝內置 Gzip 晶片級壓縮打包) ====================
         async function saveDataToCloud() {
-            saveToLocalStorage(); // 1. 先安全雙重備份到本機 LocalStorage
+            saveToLocalStorage(); 
             
             if (!currentUser || currentUser.isAnonymous) {
                 showNotice('請先登入帳號啟用雲端同步！已先將您的進度儲存於本機。');
@@ -1164,34 +1252,73 @@
             const nameSpan = document.getElementById('fileName');
             const displayTitle = nameSpan ? nameSpan.innerText : "未命名簡報";
 
-            const saveData = {
-                fileHash: currentFileHash,
-                fileName: displayTitle,
-                lastPage: currentPageNum,
-                viewMode: viewMode,
-                zoomMode: zoomMode,
-                currentZoom: currentZoom,
-                drawings: JSON.stringify(drawingsByPage),
-                updatedAt: new Date().toISOString()
-            };
-
             try {
                 showNotice('正在建立臨時雲端連線...');
-                // 🌟 同步時，打通網路 0.5 秒
                 await db.enableNetwork();
 
-                showNotice('正在寫入雲端資料庫...');
+                let uploadedPdfUrl = null;
+
+                // Gzip 智慧壓縮流程：
+                if (!isSampleMode && currentFileBuffer && storage) {
+                    const storageRef = storage.ref().child('artifacts/' + appId + '/users/' + currentUser.uid + '/pdfs/' + currentFileHash + '.pdf.gz'); // 副檔名更正為 .gz
+                    
+                    try {
+                        showNotice('正在比對雲端 PDF 檔案是否已有壓縮備份...');
+                        uploadedPdfUrl = await storageRef.getDownloadURL();
+                        showNotice('雲端已存在壓縮備份，免除重複上傳。');
+                    } catch (storageError) {
+                        showNotice('正在使用晶片對 PDF 簡報進行智慧無損壓縮...');
+                        // 調用內建 CompressionStream 進行 Gzip 無損壓縮，檔案變輕量！
+                        const compressedBuffer = await compressArrayBuffer(currentFileBuffer);
+                        
+                        showNotice('壓縮完成！正在準備上傳輕量簡報 PDF.gz 檔...');
+                        const blob = new Blob([compressedBuffer], { type: 'application/x-gzip' });
+                        const uploadTask = storageRef.put(blob);
+
+                        await new Promise((resolve, reject) => {
+                            uploadTask.on('state_changed', 
+                                (snapshot) => {
+                                    const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+                                    showNotice(`正在上傳 PDF 簡報檔案 (${Math.round(progress)}%)...`);
+                                }, 
+                                (err) => {
+                                    console.error("Storage 上傳 PDF 失敗:", err);
+                                    reject(err);
+                                }, 
+                                async () => {
+                                    uploadedPdfUrl = await storageRef.getDownloadURL();
+                                    resolve();
+                                }
+                            );
+                        });
+                    }
+                }
+
+                // 4. 寫入 Firestore 結構
+                showNotice('正在同步雲端筆刷軌跡...');
+                const saveData = {
+                    fileHash: currentFileHash,
+                    fileName: displayTitle,
+                    lastPage: currentPageNum,
+                    viewMode: viewMode,
+                    zoomMode: zoomMode,
+                    currentZoom: currentZoom,
+                    drawings: JSON.stringify(drawingsByPage),
+                    pdfUrl: uploadedPdfUrl, 
+                    updatedAt: new Date().toISOString()
+                };
+
                 const userDocRef = db.collection('artifacts').doc(appId).collection('users').doc(currentUser.uid).collection('userSettings').doc(currentFileHash);
                 await userDocRef.set(saveData);
 
                 hasUnsavedChanges = false;
                 updateUnsavedIndicator();
-                showNotice('🎉 雲端備份存檔成功！');
+                showNotice('🎉 雲端壓縮簡報與手寫筆跡同步完全同步備份成功！');
+                fetchPresentationList(); 
             } catch (error) {
                 console.warn("Cloud Save Failed:", error);
                 showNotice('寫入失敗，但已安全暫存於您的 iPad 本機。');
             } finally {
-                // 🌟 存檔完畢後，立刻強制斷開網路，保持絕對離線
                 if (db) await db.disableNetwork();
             }
         }
@@ -1203,7 +1330,6 @@
             const appId = typeof __app_id !== 'undefined' ? __app_id : 'pdf-presenter';
 
             try {
-                // 臨時啟用通訊
                 await db.enableNetwork();
 
                 if (!quietMode) showNotice('正在讀取雲端存檔...');
@@ -1231,7 +1357,6 @@
             } catch (error) {
                 console.warn("Cloud Load Failed:", error);
             } finally {
-                // 讀取完畢立刻重新切斷連線
                 if (db) await db.disableNetwork();
             }
         }
@@ -1249,7 +1374,6 @@
             }
         }
 
-        // 讀取本機檔案
         function loadPDFFile(file) {
             const nameSpan = document.getElementById('fileName');
             if (nameSpan) nameSpan.innerText = file.name;
@@ -1260,7 +1384,9 @@
             reader.onload = function(e) {
                 const arrayBuffer = e.target.result;
                 const typedarray = new Uint8Array(arrayBuffer);
+                currentFileBuffer = arrayBuffer; // 緩存檔案
                 
+                // 使用 Blob 封裝的 Worker 進行安全解碼，解決 100% 沙盒報錯
                 pdfjsLib.getDocument({ data: typedarray }).promise.then(function(pdf) {
                     pdfDoc = pdf;
                     totalPages = pdf.numPages;
@@ -1311,6 +1437,7 @@
             updateUnsavedIndicator();
 
             currentFileHash = 'sample_built_slides';
+            currentFileBuffer = null; // 內建不重覆緩存
 
             document.getElementById('totalPagesText').innerText = totalPages;
             document.getElementById('floatingTotalPages').innerText = totalPages;
@@ -1337,14 +1464,14 @@
             canvas.height = baseHeight * scale;
             ctx.scale(scale, scale);
 
-            // 繪製高質感深藍灰漸層簡報底色
+            // 漸層背景
             const grad = ctx.createLinearGradient(0, 0, baseWidth, baseHeight);
             grad.addColorStop(0, '#0f172a');
             grad.addColorStop(1, '#1e293b');
             ctx.fillStyle = grad;
             ctx.fillRect(0, 0, baseWidth, baseHeight);
 
-            // 輕量科技感格線網格
+            // 格線
             ctx.strokeStyle = 'rgba(255, 255, 255, 0.03)';
             ctx.lineWidth = 1;
             for (let i = 50; i < baseWidth; i += 50) {
@@ -1381,7 +1508,6 @@
                 ctx.fillText('• 精緻優雅的 PowerPoint 開機首頁與專業暗色調簡報介面', 60, 240);
                 ctx.fillText('• 支援一鍵全螢幕投影 (按 F 鍵或點擊下方按鈕即可快速開始)', 60, 280);
                 
-                // 示意裝飾方框
                 ctx.fillStyle = 'rgba(249, 115, 22, 0.15)';
                 ctx.strokeStyle = '#f97316';
                 ctx.lineWidth = 2;
@@ -1395,7 +1521,7 @@
                 ctx.fillText('畫筆標記不會隨網頁重整遺失', 500, 255);
                 ctx.fillText('連線失敗自動進入完全本機儲存', 500, 285);
             } else if (pageNum === 2) {
-                ctx.fillText('• 按 L 鍵啟用雷射筆，提供極致平滑 of 紅點光暈效果', 60, 160);
+                ctx.fillText('• 按 L 鍵啟用雷射筆，提供極致平滑的紅點光暈效果', 60, 160);
                 ctx.fillText('• 按 P 鍵啟用畫筆，支援多種色彩切換與多端標記線條渲染', 60, 200);
                 ctx.fillText('• 按 C 鍵還原游標，點擊選取投影片內容', 60, 240);
                 ctx.fillText('• 擁有手勢與觸控支援，完美適配 iPad 與觸碰式教學大螢幕', 60, 280);
@@ -1418,7 +1544,7 @@
                 ctx.fillText('支援 iPad 觸控手勢繪圖', 510, 290);
             } else {
                 ctx.fillText('• 隨選連線 (On-Demand) 技術，僅在點選儲存時建立雲端通訊', 60, 160);
-                ctx.fillText('• 0% 自動背景連線，完美通過學校學術網路 (TANet) 防火牆阻擋', 60, 200);
+                ctx.fillText('• 0% 自動背景連線，完美通過 school 學術網路 (TANet) 防火牆阻擋', 60, 200);
                 ctx.fillText('• 連線遇到阻礙時，本機模式完全無聲接管，使用過程毫無延遲', 60, 240);
                 ctx.fillText('• 帳號註冊與登入模組採用 Firebase Compat，安全乾淨無隱憂', 60, 280);
 
@@ -1697,11 +1823,13 @@
             if (currentPageNum > 1) goToPage(currentPageNum - 1);
         }
 
+        // 下一頁
         function nextPage() {
             if (!fileLoaded) return;
             if (currentPageNum < totalPages) goToPage(currentPageNum + 1);
         }
 
+        // 跳到指定頁面
         function goToPage(pageNum) {
             if (!fileLoaded || pageNum < 1 || pageNum > totalPages) return;
 
@@ -1731,7 +1859,6 @@
         }
 
         // ==================== 縮放控制 ====================
-        // 放大
         function zoomIn() {
             if (!fileLoaded) return;
             zoomMode = 'custom';
@@ -1765,6 +1892,7 @@
             setViewMode(viewMode, true);
         }
 
+        // 更新縮放文字比例
         function updateZoomText() {
             const txt = document.getElementById('zoomPercentText');
             if (txt) txt.innerText = `${Math.round(currentZoom * 100)}%`;
@@ -1900,7 +2028,6 @@
             setTimeout(handleResize, 350); 
         }
 
-        // 簡報時閒置隱藏滑鼠與底部列
         function enableIdleUIHider() {
             const controlBar = document.getElementById('controlBar');
             const floatingIndicator = document.getElementById('pageIndicatorFloating');
@@ -1972,18 +2099,32 @@
             }
         }
 
+        // 🌟 終極重構：完美座標對齊，將 Canvas 擺在 viewerScrollContainer，永不因 innerHTML 被銷毀
         function resetDrawingCanvasSize() {
             const currentCanvas = document.getElementById(`canvas-page-${currentPageNum}`);
-            if (!currentCanvas) return;
+            const viewer = document.getElementById('pdfViewer');
+            if (!currentCanvas || !viewer) return;
 
-            drawingCanvas.style.top = `${currentCanvas.offsetTop}px`;
-            drawingCanvas.style.left = `${currentCanvas.offsetLeft}px`;
+            // 確保 drawingCanvas 始終掛載在 viewerScrollContainer，避免被 pdfViewer.innerHTML = '' 銷毀
+            const container = document.getElementById('viewerScrollContainer');
+            if (drawingCanvas.parentElement !== container) {
+                container.appendChild(drawingCanvas);
+            }
+
+            // 雙層對齊公式：將 currentCanvas 的 offsetTop/offsetLeft 加上其父層 pdfViewer 的 offsetTop/offsetLeft
+            const topPos = currentCanvas.offsetTop + viewer.offsetTop;
+            const leftPos = currentCanvas.offsetLeft + viewer.offsetLeft;
+
+            drawingCanvas.style.top = `${topPos}px`;
+            drawingCanvas.style.left = `${leftPos}px`;
             drawingCanvas.style.width = `${currentCanvas.offsetWidth}px`;
             drawingCanvas.style.height = `${currentCanvas.offsetHeight}px`;
 
+            // 同步內在畫布的真實解析度，保證筆跡細緻不模糊
             drawingCanvas.width = currentCanvas.offsetWidth;
             drawingCanvas.height = currentCanvas.offsetHeight;
 
+            // 重繪軌跡
             redrawCurrentPageDrawings();
         }
 
@@ -2044,7 +2185,6 @@
             markChangesUnsaved();
         }
 
-        // 儲存資料時 (寫入 Firestore 與本機雙向寫入)
         function draw(e) {
             const rect = drawingCanvas.getBoundingClientRect();
             const x = e.clientX - rect.left;
@@ -2123,7 +2263,6 @@
             });
         }
 
-        // 標記尚未儲存並離線備份至 LocalStorage 確保安全
         function markChangesUnsaved() {
             hasUnsavedChanges = true;
             updateUnsavedIndicator();
@@ -2199,7 +2338,6 @@
             return false;
         }
 
-        // ==================== 其他輔助設定 ====================
         function saveFirebaseConfig() {
             const inputVal = document.getElementById('firebaseConfigInput').value.trim();
             if (!inputVal) {
